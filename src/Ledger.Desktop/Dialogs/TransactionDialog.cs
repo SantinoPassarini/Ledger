@@ -170,7 +170,11 @@ public sealed class TransactionDialog : Form
 
             PopulateCategories();
             SelectAccount(initial.AccountId);
-            SelectCategory(initial.CategoryId);
+
+            if (initial.CategoryId is Guid categoryId)
+            {
+                SelectCategory(categoryId);
+            }
             _amountInput.Value = Math.Clamp(initial.Amount, _amountInput.Minimum, _amountInput.Maximum);
             _datePicker.Value = ClampDate(initial.Date.ToDateTime(TimeOnly.MinValue));
             _descriptionBox.Text = initial.Description ?? string.Empty;

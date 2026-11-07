@@ -229,7 +229,7 @@ namespace Ledger.Api.Data.Migrations
                     b.Property<decimal>("Amount")
                         .HasColumnType("numeric(18,2)");
 
-                    b.Property<Guid>("CategoryId")
+                    b.Property<Guid?>("CategoryId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAtUtc")
@@ -266,13 +266,21 @@ namespace Ledger.Api.Data.Migrations
 
                     b.HasIndex("Date");
 
+                    b.HasIndex("TransferGroupId");
+
                     b.HasIndex("AccountId", "Date");
 
                     b.HasIndex("CategoryId", "Date");
 
+                    b.HasIndex("TransferGroupId", "Type")
+                        .IsUnique()
+                        .HasFilter("\"TransferGroupId\" IS NOT NULL");
+
                     b.ToTable("Transactions", null, t =>
                         {
                             t.HasCheckConstraint("CK_Transactions_Amount_Positive", "\"Amount\" > 0");
+
+                            t.HasCheckConstraint("CK_Transactions_Category_Transfer", "(\"Type\" IN ('Income', 'Expense') AND \"CategoryId\" IS NOT NULL AND \"TransferGroupId\" IS NULL) OR (\"Type\" IN ('TransferOut', 'TransferIn') AND \"CategoryId\" IS NULL AND \"TransferGroupId\" IS NOT NULL)");
                         });
                 });
 
@@ -287,8 +295,7 @@ namespace Ledger.Api.Data.Migrations
                     b.HasOne("Ledger.Api.Domain.Category", "Category")
                         .WithMany("Transactions")
                         .HasForeignKey("CategoryId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Account");
 

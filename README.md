@@ -16,11 +16,14 @@ WinForms -> HTTP/JSON -> ASP.NET Core API -> EF Core -> PostgreSQL
 
 ```
 Ledger/
-├─ Ledger.sln
-├─ src/
-│  ├─ Ledger.Api/          ASP.NET Core Web API
-│  └─ Ledger.Desktop/      Windows Forms client
-└─ tests/                  Added when the first tested behavior exists
+├── Ledger.sln
+├── src/
+│   ├── Ledger.Api/          ASP.NET Core Web API
+│   └── Ledger.Desktop/      Windows Forms client
+├── tests/
+│   ├── Ledger.Api.Tests/    API integration tests
+│   └── Ledger.Desktop.Smoke/
+└── .github/workflows/       CI
 ```
 
 ## Prerequisites
@@ -34,6 +37,30 @@ Ledger/
 ```powershell
 dotnet build Ledger.sln
 ```
+
+## Testing
+
+API integration tests run against PostgreSQL and create a unique schema, so they do not modify existing data:
+
+```powershell
+dotnet test tests/Ledger.Api.Tests/Ledger.Api.Tests.csproj
+```
+
+They read `LEDGER_TEST_CONNECTION` or the `ConnectionStrings:Ledger` value from `Ledger.Api` user secrets. Never point tests at production data.
+
+The desktop smoke test requires a running API:
+
+```powershell
+dotnet run --project tests/Ledger.Desktop.Smoke
+```
+
+Or start the API automatically:
+
+```powershell
+.\tests\run-desktop-smoke.ps1
+```
+
+Test artifacts and screenshots are written to `artifacts/` and are ignored by Git. See `tests/README.md` for details.
 
 ## Running the API
 
@@ -57,7 +84,7 @@ The desktop client has three tabs:
 
 - **Accounts**: list balances, create, edit and archive accounts; optionally show archived accounts.
 - **Categories**: filter by kind, create, edit and archive categories.
-- **Transactions**: filter and search transactions, page through results, create, edit and archive income or expense transactions.
+- **Transactions**: filter and search transactions, page through results, create, edit and archive income or expense transactions, and create and archive transfers.
 
 ## Configuration and secrets
 
@@ -107,9 +134,16 @@ All routes are under `/api/v1`.
 | POST | `/transactions` | Create income or expense |
 | PUT | `/transactions/{id}` | Update income or expense |
 | DELETE | `/transactions/{id}` | Archive transaction |
+| POST | `/transfers` | Create a transfer between two accounts |
+| GET | `/transfers/{transferGroupId}` | Transfer detail with both legs |
+| DELETE | `/transfers/{transferGroupId}` | Archive both transfer legs |
 | GET | `/health` | Database connectivity check |
 
-`DELETE` archives records (`IsArchived = true`); it never performs physical deletes. Archived records remain visible with `includeArchived=true`.
+`DELETE` archives records (`IsArchived = true`); it never performs physical deletes. Archived records remain visible with `includeArchived=true`. Archiving a transfer archives both linked transactions.
+
+## Transfers
+
+A transfer moves money between two active accounts. Creating one writes two linked transactions, `TransferOut` and `TransferIn`, with the same `TransferGroupId` and no category. The desktop client archives both legs together.
 
 ## Data separation
 
@@ -122,5 +156,6 @@ Development and real financial data must not share a database once Ledger is use
 - **CP2**: accounts and categories API — done
 - **CP3**: transactions API and balances — done
 - **CP4**: WinForms client — done
-- **CP5**: transfers — next
-- Later: dashboard, budgets, authentication, deployment
+- **CP5**: transfers — done
+- **CP6**: dashboard — next
+- Later: budgets, authentication, deployment

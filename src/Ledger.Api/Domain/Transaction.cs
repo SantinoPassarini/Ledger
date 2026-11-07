@@ -8,9 +8,9 @@ public sealed class Transaction
 
     public Account Account { get; set; } = null!;
 
-    public Guid CategoryId { get; set; }
+    public Guid? CategoryId { get; set; }
 
-    public Category Category { get; set; } = null!;
+    public Category? Category { get; set; }
 
     public TransactionType Type { get; set; }
 

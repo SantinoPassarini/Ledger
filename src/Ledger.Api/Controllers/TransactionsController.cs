@@ -106,7 +106,7 @@ public sealed class TransactionsController : ControllerBase
                 transaction.AccountId,
                 transaction.Account.Name,
                 transaction.CategoryId,
-                transaction.Category.Name,
+                transaction.Category != null ? transaction.Category.Name : null,
                 transaction.Type,
                 transaction.Amount,
                 transaction.Date,
@@ -131,7 +131,7 @@ public sealed class TransactionsController : ControllerBase
                 transaction.AccountId,
                 transaction.Account.Name,
                 transaction.CategoryId,
-                transaction.Category.Name,
+                transaction.Category != null ? transaction.Category.Name : null,
                 transaction.Type,
                 transaction.Amount,
                 transaction.Date,
@@ -210,6 +210,14 @@ public sealed class TransactionsController : ControllerBase
                 detail: "Archived transactions cannot be modified.");
         }
 
+        if (transaction.TransferGroupId is not null)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Transfer cannot be modified",
+                detail: "Transfers cannot be edited. Archive the transfer and create a new one.");
+        }
+
         var (account, category, error) = await ValidateForWriteAsync(
             request.AccountId,
             request.CategoryId,
@@ -248,12 +256,20 @@ public sealed class TransactionsController : ControllerBase
             return NotFound();
         }
 
-        if (!transaction.IsArchived)
+        var now = DateTime.UtcNow;
+        var transactions = transaction.TransferGroupId is Guid transferGroupId
+            ? await _db.Transactions
+                .Where(candidate => candidate.TransferGroupId == transferGroupId)
+                .ToListAsync(cancellationToken)
+            : new List<Transaction> { transaction };
+
+        foreach (var candidate in transactions.Where(candidate => !candidate.IsArchived))
         {
-            transaction.IsArchived = true;
-            transaction.UpdatedAtUtc = DateTime.UtcNow;
-            await _db.SaveChangesAsync(cancellationToken);
+            candidate.IsArchived = true;
+            candidate.UpdatedAtUtc = now;
         }
+
+        await _db.SaveChangesAsync(cancellationToken);
 
         return NoContent();
     }
@@ -375,7 +391,7 @@ public sealed class TransactionsController : ControllerBase
     private static TransactionResponse ToResponse(
         Transaction transaction,
         string accountName,
-        string categoryName)
+        string? categoryName)
     {
         return new TransactionResponse(
             transaction.Id,

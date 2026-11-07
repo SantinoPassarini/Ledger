@@ -22,6 +22,7 @@ public sealed class TransactionsView : ApiViewBase
     private readonly Button _applyButton;
     private readonly Button _clearButton;
     private readonly Button _newButton;
+    private readonly Button _transferButton;
     private readonly Button _editButton;
     private readonly Button _archiveButton;
     private readonly Button _refreshButton;
@@ -98,7 +99,9 @@ public sealed class TransactionsView : ApiViewBase
         {
             new TypeFilterOption("All types", null),
             new TypeFilterOption("Income", TransactionType.Income),
-            new TypeFilterOption("Expense", TransactionType.Expense)
+            new TypeFilterOption("Expense", TransactionType.Expense),
+            new TypeFilterOption("Transfer out", TransactionType.TransferOut),
+            new TypeFilterOption("Transfer in", TransactionType.TransferIn)
         };
         _typeFilter.DisplayMember = nameof(TypeFilterOption.Label);
 
@@ -148,6 +151,9 @@ public sealed class TransactionsView : ApiViewBase
         _newButton = UiFactory.CreateButton("New");
         _newButton.Click += async (_, _) => await RunAsync(CreateCoreAsync);
 
+        _transferButton = UiFactory.CreateButton("Transfer");
+        _transferButton.Click += async (_, _) => await RunAsync(CreateTransferCoreAsync);
+
         _editButton = UiFactory.CreateButton("Edit");
         _editButton.Click += async (_, _) => await RunAsync(EditSelectedCoreAsync);
 
@@ -189,6 +195,7 @@ public sealed class TransactionsView : ApiViewBase
         _actionPanel.Controls.AddRange(
         [
             _newButton,
+            _transferButton,
             _editButton,
             _archiveButton,
             _refreshButton,
@@ -224,6 +231,7 @@ public sealed class TransactionsView : ApiViewBase
         var selected = SelectedTransaction();
 
         _newButton.Enabled = !IsBusy;
+        _transferButton.Enabled = !IsBusy;
         _refreshButton.Enabled = !IsBusy;
         _editButton.Enabled = !IsBusy &&
                               selected is { IsArchived: false } &&
@@ -475,6 +483,44 @@ public sealed class TransactionsView : ApiViewBase
         }
     }
 
+    private async Task CreateTransferCoreAsync()
+    {
+        var activeAccounts = _allAccounts.Where(account => !account.IsArchived).ToList();
+
+        if (activeAccounts.Count < 2)
+        {
+            UiMessages.ShowInformation(this, "Create at least two active accounts before adding a transfer.");
+            return;
+        }
+
+        TransferInput? pending = null;
+
+        while (true)
+        {
+            using var dialog = new TransferDialog(activeAccounts, pending);
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            try
+            {
+                await Api.CreateTransferAsync(dialog.Input);
+                SetStatus("Transfer created.");
+                _page = 1;
+                await ReloadCoreAsync();
+                return;
+            }
+            catch (Exception exception) when (
+                exception is ApiException or HttpRequestException or TaskCanceledException)
+            {
+                UiMessages.ShowError(this, exception);
+                pending = dialog.Input;
+            }
+        }
+    }
+
     private async Task EditSelectedCoreAsync()
     {
         var transaction = SelectedTransaction();
@@ -487,10 +533,10 @@ public sealed class TransactionsView : ApiViewBase
         }
 
         var accounts = GetAccountsForEditing(transaction.AccountId);
-        var categories = GetCategoriesForEditing(transaction.CategoryId);
+        var categories = GetCategoriesForEditing(transaction.CategoryId!.Value);
         var pending = new TransactionInput(
             transaction.AccountId,
-            transaction.CategoryId,
+            transaction.CategoryId.Value,
             transaction.Type,
             transaction.Amount,
             transaction.Date,
@@ -534,15 +580,28 @@ public sealed class TransactionsView : ApiViewBase
             return;
         }
 
+        var label = transaction.Type is TransactionType.TransferOut or TransactionType.TransferIn
+            ? "transfer"
+            : "transaction";
+
         if (!UiMessages.ConfirmArchive(
                 this,
-                $"transaction from {transaction.Date:yyyy-MM-dd} for {transaction.Amount:N2}"))
+                $"{label} from {transaction.Date:yyyy-MM-dd} for {transaction.Amount:N2}"))
         {
             return;
         }
 
-        await Api.ArchiveTransactionAsync(transaction.Id);
-        SetStatus("Transaction archived.");
+        if (transaction.TransferGroupId is Guid transferGroupId)
+        {
+            await Api.ArchiveTransferAsync(transferGroupId);
+            SetStatus("Transfer archived.");
+        }
+        else
+        {
+            await Api.ArchiveTransactionAsync(transaction.Id);
+            SetStatus("Transaction archived.");
+        }
+
         await ReloadCoreAsync();
     }
 
@@ -621,7 +680,7 @@ public sealed class TransactionsView : ApiViewBase
 
         public string Account => Model.AccountName;
 
-        public string Category => Model.CategoryName;
+        public string Category => Model.CategoryName ?? "Transfer";
 
         public decimal Amount => Model.Type is TransactionType.Income or TransactionType.TransferIn
             ? Model.Amount

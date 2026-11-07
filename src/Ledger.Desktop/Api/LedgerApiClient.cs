@@ -170,6 +170,36 @@ public sealed class LedgerApiClient : IDisposable
         using var response = await SendAsync(request, cancellationToken);
     }
 
+    public async Task<TransferModel> CreateTransferAsync(
+        TransferInput input,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/transfers")
+        {
+            Content = JsonContent.Create(input, options: JsonOptions)
+        };
+
+        using var response = await SendAsync(request, cancellationToken);
+        return await DeserializeAsync<TransferModel>(response, cancellationToken);
+    }
+
+    public async Task<TransferModel> GetTransferAsync(
+        Guid transferGroupId,
+        CancellationToken cancellationToken = default)
+    {
+        return await GetAsync<TransferModel>(
+            $"api/v1/transfers/{transferGroupId}",
+            cancellationToken);
+    }
+
+    public async Task ArchiveTransferAsync(
+        Guid transferGroupId,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/transfers/{transferGroupId}");
+        using var response = await SendAsync(request, cancellationToken);
+    }
+
     public void Dispose()
     {
         _http.Dispose();

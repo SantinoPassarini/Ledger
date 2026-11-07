@@ -20,8 +20,8 @@ public sealed record TransactionModel(
     Guid Id,
     Guid AccountId,
     string AccountName,
-    Guid CategoryId,
-    string CategoryName,
+    Guid? CategoryId,
+    string? CategoryName,
     TransactionType Type,
     decimal Amount,
     DateOnly Date,
@@ -30,6 +30,11 @@ public sealed record TransactionModel(
     bool IsArchived,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc);
+
+public sealed record TransferModel(
+    Guid TransferGroupId,
+    TransactionModel OutTransaction,
+    TransactionModel InTransaction);
 
 public sealed record PagedResponse<T>(
     IReadOnlyList<T> Items,
@@ -48,6 +53,13 @@ public sealed record TransactionInput(
     Guid AccountId,
     Guid CategoryId,
     TransactionType Type,
+    decimal Amount,
+    DateOnly Date,
+    string? Description);
+
+public sealed record TransferInput(
+    Guid FromAccountId,
+    Guid ToAccountId,
     decimal Amount,
     DateOnly Date,
     string? Description);
