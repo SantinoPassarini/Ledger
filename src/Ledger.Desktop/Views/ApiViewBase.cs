@@ -38,6 +38,11 @@ public abstract class ApiViewBase : UserControl
         {
             await action();
         }
+        catch (ApiException exception) when (exception.StatusCode == 401)
+        {
+            // The client raises SessionExpired and MainForm returns to the sign-in window.
+            SetStatus("Session expired.");
+        }
         catch (Exception exception)
         {
             if (CanUpdateUi)

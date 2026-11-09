@@ -1,3 +1,4 @@
+using Ledger.Api.Auth;
 using Ledger.Api.Contracts.Categories;
 using Ledger.Api.Data;
 using Ledger.Api.Domain;
@@ -12,10 +13,12 @@ namespace Ledger.Api.Controllers;
 public sealed class CategoriesController : ControllerBase
 {
     private readonly LedgerDbContext _db;
+    private readonly ICurrentUser _currentUser;
 
-    public CategoriesController(LedgerDbContext db)
+    public CategoriesController(LedgerDbContext db, ICurrentUser currentUser)
     {
         _db = db;
+        _currentUser = currentUser;
     }
 
     [HttpGet]
@@ -83,6 +86,7 @@ public sealed class CategoriesController : ControllerBase
         var category = new Category
         {
             Id = Guid.NewGuid(),
+            UserId = _currentUser.RequireUserId(),
             Name = name,
             Kind = kind,
             CreatedAtUtc = DateTime.UtcNow

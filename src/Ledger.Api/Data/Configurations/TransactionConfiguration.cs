@@ -19,6 +19,14 @@ public sealed class TransactionConfiguration : IEntityTypeConfiguration<Transact
 
         builder.HasKey(transaction => transaction.Id);
 
+        builder.Property(transaction => transaction.UserId)
+            .IsRequired();
+
+        builder.HasOne(transaction => transaction.User)
+            .WithMany(user => user.Transactions)
+            .HasForeignKey(transaction => transaction.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.Property(transaction => transaction.Type)
             .HasConversion<string>()
             .HasMaxLength(20)
@@ -55,6 +63,7 @@ public sealed class TransactionConfiguration : IEntityTypeConfiguration<Transact
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasIndex(transaction => new { transaction.UserId, transaction.Date });
         builder.HasIndex(transaction => new { transaction.AccountId, transaction.Date });
         builder.HasIndex(transaction => new { transaction.CategoryId, transaction.Date });
         builder.HasIndex(transaction => transaction.Date);

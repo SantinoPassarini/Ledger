@@ -55,6 +55,7 @@ public sealed class TransfersTests : ApiTestBase
     {
         var source = await CreateAccountAsync();
         var destination = await CreateAccountAsync();
+        await FundAccountAsync(source.Id, 25m);
         var transfer = await CreateTransferAsync(source.Id, destination.Id, 25m);
 
         using var response = await Client.GetAsync(
@@ -72,6 +73,7 @@ public sealed class TransfersTests : ApiTestBase
     {
         var source = await CreateAccountAsync();
         var destination = await CreateAccountAsync();
+        await FundAccountAsync(source.Id, 25m);
         var transfer = await CreateTransferAsync(source.Id, destination.Id, 25m);
 
         using var response = await Client.DeleteAsync(
@@ -82,15 +84,19 @@ public sealed class TransfersTests : ApiTestBase
         using var visibleResponse = await Client.GetAsync(
             $"api/v1/transactions?accountId={source.Id}");
         var visible = await ReadAsync<PagedResponse<TransactionResponse>>(visibleResponse);
-        Assert.Equal(0, visible.TotalCount);
+        Assert.Equal(1, visible.TotalCount);
+        Assert.Equal(TransactionType.Income, visible.Items[0].Type);
+        Assert.Null(visible.Items[0].TransferGroupId);
 
         using var allResponse = await Client.GetAsync(
             $"api/v1/transactions?accountId={source.Id}&includeArchived=true");
         var all = await ReadAsync<PagedResponse<TransactionResponse>>(allResponse);
-        Assert.Single(all.Items);
-        Assert.True(all.Items[0].IsArchived);
+        Assert.Equal(2, all.TotalCount);
+        var archivedLeg = Assert.Single(
+            all.Items.Where(item => item.TransferGroupId is not null));
+        Assert.True(archivedLeg.IsArchived);
 
-        Assert.Equal(0m, (await GetAccountAsync(source.Id)).Balance);
+        Assert.Equal(25m, (await GetAccountAsync(source.Id)).Balance);
         Assert.Equal(0m, (await GetAccountAsync(destination.Id)).Balance);
     }
 
@@ -99,6 +105,7 @@ public sealed class TransfersTests : ApiTestBase
     {
         var source = await CreateAccountAsync();
         var destination = await CreateAccountAsync();
+        await FundAccountAsync(source.Id, 25m);
         var transfer = await CreateTransferAsync(source.Id, destination.Id, 25m);
 
         using var response = await Client.DeleteAsync(
@@ -118,6 +125,7 @@ public sealed class TransfersTests : ApiTestBase
     {
         var source = await CreateAccountAsync();
         var destination = await CreateAccountAsync();
+        await FundAccountAsync(source.Id, 25m);
         var transfer = await CreateTransferAsync(source.Id, destination.Id, 25m);
 
         using var response = await PutJsonAsync(
@@ -198,6 +206,7 @@ public sealed class TransfersTests : ApiTestBase
     {
         var source = await CreateAccountAsync();
         var destination = await CreateAccountAsync();
+        await FundAccountAsync(source.Id, 10m);
         await CreateTransferAsync(source.Id, destination.Id, 10m);
 
         using var response = await Client.GetAsync(
@@ -207,5 +216,56 @@ public sealed class TransfersTests : ApiTestBase
         var page = await ReadAsync<PagedResponse<TransactionResponse>>(response);
         Assert.Single(page.Items);
         Assert.Equal(TransactionType.TransferOut, page.Items[0].Type);
+    }
+
+    [Fact]
+    public async Task TransferExceedingBalance_ReturnsConflictAndCreatesNoLegs()
+    {
+        var source = await CreateAccountAsync();
+        var destination = await CreateAccountAsync();
+        await FundAccountAsync(source.Id, 50m);
+
+        using var response = await PostJsonAsync(
+            "api/v1/transfers",
+            new CreateTransferRequest
+            {
+                FromAccountId = source.Id,
+                ToAccountId = destination.Id,
+                Amount = 50.01m,
+                Date = DateOnly.FromDateTime(DateTime.Today)
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(50m, (await GetAccountAsync(source.Id)).Balance);
+        Assert.Equal(0m, (await GetAccountAsync(destination.Id)).Balance);
+
+        using var sourceTransactionsResponse = await Client.GetAsync(
+            $"api/v1/transactions?accountId={source.Id}&includeArchived=true");
+        var sourceTransactions = await ReadAsync<PagedResponse<TransactionResponse>>(
+            sourceTransactionsResponse);
+        Assert.Single(sourceTransactions.Items);
+        Assert.DoesNotContain(
+            sourceTransactions.Items,
+            transaction => transaction.TransferGroupId is not null);
+    }
+
+    [Fact]
+    public async Task TransferEqualToAvailableBalance_Succeeds()
+    {
+        var source = await CreateAccountAsync();
+        var destination = await CreateAccountAsync();
+        await FundAccountAsync(source.Id, 50m);
+
+        var transfer = await CreateTransferAsync(source.Id, destination.Id, 50m);
+
+        Assert.Equal(50m, transfer.OutTransaction.Amount);
+        Assert.Equal(0m, (await GetAccountAsync(source.Id)).Balance);
+        Assert.Equal(50m, (await GetAccountAsync(destination.Id)).Balance);
+    }
+
+    private async Task FundAccountAsync(Guid accountId, decimal amount)
+    {
+        var category = await CreateCategoryAsync(kind: CategoryKind.Income);
+        await CreateTransactionAsync(accountId, category.Id, TransactionType.Income, amount);
     }
 }

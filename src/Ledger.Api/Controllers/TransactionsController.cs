@@ -1,3 +1,4 @@
+using Ledger.Api.Auth;
 using Ledger.Api.Contracts.Common;
 using Ledger.Api.Contracts.Transactions;
 using Ledger.Api.Data;
@@ -14,10 +15,12 @@ public sealed class TransactionsController : ControllerBase
     private const decimal MaxAmount = 9_999_999_999_999_999.99m;
 
     private readonly LedgerDbContext _db;
+    private readonly ICurrentUser _currentUser;
 
-    public TransactionsController(LedgerDbContext db)
+    public TransactionsController(LedgerDbContext db, ICurrentUser currentUser)
     {
         _db = db;
+        _currentUser = currentUser;
     }
 
     [HttpGet]
@@ -168,6 +171,7 @@ public sealed class TransactionsController : ControllerBase
         var transaction = new Transaction
         {
             Id = Guid.NewGuid(),
+            UserId = _currentUser.RequireUserId(),
             AccountId = account!.Id,
             CategoryId = category!.Id,
             Type = request.Type.Value,

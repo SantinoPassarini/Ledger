@@ -55,9 +55,62 @@ namespace Ledger.Api.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
+                    b.HasIndex("UserId", "Name");
+
                     b.ToTable("Accounts", (string)null);
+                });
+
+            modelBuilder.Entity("Ledger.Api.Domain.Budget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<bool>("IsArchived")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateOnly>("Month")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("Month");
+
+                    b.HasIndex("UserId", "CategoryId", "Month")
+                        .IsUnique();
+
+                    b.ToTable("Budgets", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Budgets_Amount_Positive", "\"Amount\" > 0");
+                        });
                 });
 
             modelBuilder.Entity("Ledger.Api.Domain.Category", b =>
@@ -86,9 +139,12 @@ namespace Ledger.Api.Data.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
 
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("Name", "Kind")
+                    b.HasIndex("UserId", "Name", "Kind")
                         .IsUnique()
                         .HasFilter("\"IsArchived\" = FALSE");
 
@@ -101,7 +157,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Income",
-                            Name = "Salary"
+                            Name = "Salary",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -109,7 +166,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Income",
-                            Name = "Freelance"
+                            Name = "Freelance",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -117,7 +175,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Income",
-                            Name = "Investments"
+                            Name = "Investments",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -125,7 +184,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Income",
-                            Name = "Other Income"
+                            Name = "Other Income",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -133,7 +193,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Expense",
-                            Name = "Food"
+                            Name = "Food",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -141,7 +202,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Expense",
-                            Name = "Groceries"
+                            Name = "Groceries",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -149,7 +211,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Expense",
-                            Name = "Transport"
+                            Name = "Transport",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -157,7 +220,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Expense",
-                            Name = "Housing"
+                            Name = "Housing",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -165,7 +229,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Expense",
-                            Name = "Utilities"
+                            Name = "Utilities",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -173,7 +238,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Expense",
-                            Name = "Health"
+                            Name = "Health",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -181,7 +247,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Expense",
-                            Name = "Entertainment"
+                            Name = "Entertainment",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -189,7 +256,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Expense",
-                            Name = "Education"
+                            Name = "Education",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -197,7 +265,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Expense",
-                            Name = "Clothing"
+                            Name = "Clothing",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -205,7 +274,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Expense",
-                            Name = "Subscriptions"
+                            Name = "Subscriptions",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         },
                         new
                         {
@@ -213,7 +283,8 @@ namespace Ledger.Api.Data.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             IsArchived = false,
                             Kind = "Expense",
-                            Name = "Other Expenses"
+                            Name = "Other Expenses",
+                            UserId = new Guid("11111111-1111-1111-1111-111111111001")
                         });
                 });
 
@@ -262,6 +333,9 @@ namespace Ledger.Api.Data.Migrations
                         .HasColumnType("timestamptz")
                         .HasDefaultValueSql("now()");
 
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Date");
@@ -276,12 +350,112 @@ namespace Ledger.Api.Data.Migrations
                         .IsUnique()
                         .HasFilter("\"TransferGroupId\" IS NOT NULL");
 
+                    b.HasIndex("UserId", "Date");
+
                     b.ToTable("Transactions", null, t =>
                         {
                             t.HasCheckConstraint("CK_Transactions_Amount_Positive", "\"Amount\" > 0");
 
                             t.HasCheckConstraint("CK_Transactions_Category_Transfer", "(\"Type\" IN ('Income', 'Expense') AND \"CategoryId\" IS NOT NULL AND \"TransferGroupId\" IS NULL) OR (\"Type\" IN ('TransferOut', 'TransferIn') AND \"CategoryId\" IS NULL AND \"TransferGroupId\" IS NOT NULL)");
                         });
+                });
+
+            modelBuilder.Entity("Ledger.Api.Domain.User", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("NormalizedUsername")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedEmail")
+                        .IsUnique();
+
+                    b.HasIndex("NormalizedUsername")
+                        .IsUnique();
+
+                    b.ToTable("Users", (string)null);
+                });
+
+            modelBuilder.Entity("Ledger.Api.Domain.Account", b =>
+                {
+                    b.HasOne("Ledger.Api.Domain.User", "User")
+                        .WithMany("Accounts")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Ledger.Api.Domain.Budget", b =>
+                {
+                    b.HasOne("Ledger.Api.Domain.Category", "Category")
+                        .WithMany("Budgets")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ledger.Api.Domain.User", "User")
+                        .WithMany("Budgets")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Category");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Ledger.Api.Domain.Category", b =>
+                {
+                    b.HasOne("Ledger.Api.Domain.User", "User")
+                        .WithMany("Categories")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Ledger.Api.Domain.Transaction", b =>
@@ -297,9 +471,17 @@ namespace Ledger.Api.Data.Migrations
                         .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("Ledger.Api.Domain.User", "User")
+                        .WithMany("Transactions")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.Navigation("Account");
 
                     b.Navigation("Category");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Ledger.Api.Domain.Account", b =>
@@ -309,6 +491,19 @@ namespace Ledger.Api.Data.Migrations
 
             modelBuilder.Entity("Ledger.Api.Domain.Category", b =>
                 {
+                    b.Navigation("Budgets");
+
+                    b.Navigation("Transactions");
+                });
+
+            modelBuilder.Entity("Ledger.Api.Domain.User", b =>
+                {
+                    b.Navigation("Accounts");
+
+                    b.Navigation("Budgets");
+
+                    b.Navigation("Categories");
+
                     b.Navigation("Transactions");
                 });
 #pragma warning restore 612, 618

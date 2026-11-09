@@ -8,6 +8,7 @@ public sealed class TransferDialog : Form
 {
     private readonly ComboBox _fromCombo;
     private readonly ComboBox _toCombo;
+    private readonly Label _availableLabel;
     private readonly NumericUpDown _amountInput;
     private readonly DateTimePicker _datePicker;
     private readonly TextBox _descriptionBox;
@@ -24,7 +25,7 @@ public sealed class TransferDialog : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(460, 330);
+        ClientSize = new Size(460, 370);
         Font = new Font("Segoe UI", 9F);
         AutoScaleMode = AutoScaleMode.Font;
 
@@ -32,13 +33,13 @@ public sealed class TransferDialog : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 6,
+            RowCount = 7,
             Padding = new Padding(16, 16, 16, 12)
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < 6; i++)
         {
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         }
@@ -53,6 +54,15 @@ public sealed class TransferDialog : Form
         };
         _fromCombo.DataSource = accounts.ToList();
         _fromCombo.DisplayMember = nameof(AccountModel.Name);
+
+        _availableLabel = new Label
+        {
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, 8, 0, 8),
+            Text = "-"
+        };
+        _fromCombo.SelectedIndexChanged += (_, _) => UpdateAvailableBalance();
 
         _toCombo = new ComboBox
         {
@@ -122,15 +132,17 @@ public sealed class TransferDialog : Form
 
         layout.Controls.Add(CreateLabel("From account"), 0, 0);
         layout.Controls.Add(_fromCombo, 1, 0);
-        layout.Controls.Add(CreateLabel("To account"), 0, 1);
-        layout.Controls.Add(_toCombo, 1, 1);
-        layout.Controls.Add(CreateLabel("Amount"), 0, 2);
-        layout.Controls.Add(_amountInput, 1, 2);
-        layout.Controls.Add(CreateLabel("Date"), 0, 3);
-        layout.Controls.Add(_datePicker, 1, 3);
-        layout.Controls.Add(CreateLabel("Description"), 0, 4);
-        layout.Controls.Add(_descriptionBox, 1, 4);
-        layout.Controls.Add(buttonPanel, 0, 5);
+        layout.Controls.Add(CreateLabel("Available"), 0, 1);
+        layout.Controls.Add(_availableLabel, 1, 1);
+        layout.Controls.Add(CreateLabel("To account"), 0, 2);
+        layout.Controls.Add(_toCombo, 1, 2);
+        layout.Controls.Add(CreateLabel("Amount"), 0, 3);
+        layout.Controls.Add(_amountInput, 1, 3);
+        layout.Controls.Add(CreateLabel("Date"), 0, 4);
+        layout.Controls.Add(_datePicker, 1, 4);
+        layout.Controls.Add(CreateLabel("Description"), 0, 5);
+        layout.Controls.Add(_descriptionBox, 1, 5);
+        layout.Controls.Add(buttonPanel, 0, 6);
         layout.SetColumnSpan(buttonPanel, 2);
 
         Controls.Add(layout);
@@ -165,9 +177,26 @@ public sealed class TransferDialog : Form
                 _toCombo.SelectedIndex = 0;
             }
         }
+
+        UpdateAvailableBalance();
     }
 
     public TransferInput Input { get; private set; } = default!;
+
+    private void UpdateAvailableBalance()
+    {
+        if (_fromCombo.SelectedItem is AccountModel account)
+        {
+            _availableLabel.Text = account.Balance.ToString("N2");
+            _availableLabel.ForeColor = account.Balance > 0
+                ? Color.FromArgb(21, 128, 61)
+                : Color.FromArgb(185, 28, 28);
+            return;
+        }
+
+        _availableLabel.Text = "-";
+        _availableLabel.ForeColor = SystemColors.GrayText;
+    }
 
     private static void SelectAccount(ComboBox comboBox, Guid accountId)
     {
@@ -213,6 +242,13 @@ public sealed class TransferDialog : Form
         if (fromAccount.Id == toAccount.Id)
         {
             ShowValidation("Source and destination accounts must be different.");
+            return;
+        }
+
+        if (_amountInput.Value > fromAccount.Balance)
+        {
+            ShowValidation(
+                $"Insufficient funds. Available balance: {fromAccount.Balance:N2}.");
             return;
         }
 

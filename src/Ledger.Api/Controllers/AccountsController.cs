@@ -1,3 +1,4 @@
+using Ledger.Api.Auth;
 using Ledger.Api.Contracts.Accounts;
 using Ledger.Api.Data;
 using Ledger.Api.Domain;
@@ -14,11 +15,16 @@ public sealed class AccountsController : ControllerBase
 {
     private readonly LedgerDbContext _db;
     private readonly LedgerOptions _options;
+    private readonly ICurrentUser _currentUser;
 
-    public AccountsController(LedgerDbContext db, IOptions<LedgerOptions> options)
+    public AccountsController(
+        LedgerDbContext db,
+        IOptions<LedgerOptions> options,
+        ICurrentUser currentUser)
     {
         _db = db;
         _options = options.Value;
+        _currentUser = currentUser;
     }
 
     [HttpGet]
@@ -79,6 +85,7 @@ public sealed class AccountsController : ControllerBase
         var account = new Account
         {
             Id = Guid.NewGuid(),
+            UserId = _currentUser.RequireUserId(),
             Name = name,
             Type = request.Type!.Value,
             Currency = _options.Currency,

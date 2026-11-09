@@ -1,22 +1,31 @@
 using System.Drawing;
 using System.Windows.Forms;
 using Ledger.Desktop.Api;
+using Ledger.Desktop.Dialogs;
 using Ledger.Desktop.Views;
 
 namespace Ledger.Desktop;
 
 public sealed class MainForm : Form
 {
+    private readonly LedgerApiClient _api;
     private readonly TabControl _tabs;
     private readonly StatusStrip _statusStrip;
     private readonly ToolStripStatusLabel _statusLabel;
+    private readonly Label _userLabel;
+    private readonly Button _changePasswordButton;
+    private readonly Button _signOutButton;
+    private readonly DashboardView _dashboardView;
     private readonly AccountsView _accountsView;
     private readonly CategoriesView _categoriesView;
+    private readonly BudgetsView _budgetsView;
     private readonly TransactionsView _transactionsView;
     private bool _initialized;
 
     public MainForm(LedgerApiClient api, string apiBaseUrl)
     {
+        _api = api;
+
         Text = "Ledger";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(1180, 720);
@@ -37,8 +46,10 @@ public sealed class MainForm : Form
         var apiLabel = new ToolStripStatusLabel($"API: {apiBaseUrl}");
         _statusStrip.Items.AddRange([_statusLabel, apiLabel]);
 
+        _dashboardView = new DashboardView(api, SetStatus);
         _accountsView = new AccountsView(api, SetStatus);
         _categoriesView = new CategoriesView(api, SetStatus);
+        _budgetsView = new BudgetsView(api, SetStatus);
         _transactionsView = new TransactionsView(api, SetStatus);
 
         _tabs = new TabControl
@@ -47,8 +58,10 @@ public sealed class MainForm : Form
             Font = new Font("Segoe UI", 10F),
             Padding = new Point(16, 6)
         };
+        _tabs.TabPages.Add(CreatePage("Dashboard", _dashboardView));
         _tabs.TabPages.Add(CreatePage("Accounts", _accountsView));
         _tabs.TabPages.Add(CreatePage("Categories", _categoriesView));
+        _tabs.TabPages.Add(CreatePage("Budgets", _budgetsView));
         _tabs.TabPages.Add(CreatePage("Transactions", _transactionsView));
 
         var header = new Panel
@@ -73,6 +86,53 @@ public sealed class MainForm : Form
             AutoSize = true,
             Location = new Point(18, 38)
         });
+
+        var accountPanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Right,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            AutoSize = true,
+            Padding = new Padding(0, 18, 16, 0)
+        };
+        _signOutButton = new Button
+        {
+            Text = "Sign out",
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(84, 28),
+            Padding = new Padding(10, 2, 10, 2),
+            Margin = new Padding(8, 0, 0, 0),
+            UseVisualStyleBackColor = true
+        };
+        _changePasswordButton = new Button
+        {
+            Text = "Change password",
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(120, 28),
+            Padding = new Padding(10, 2, 10, 2),
+            Margin = new Padding(8, 0, 0, 0),
+            UseVisualStyleBackColor = true
+        };
+        _userLabel = new Label
+        {
+            Text = api.CurrentUser?.Username ?? api.CurrentUser?.Email ?? string.Empty,
+            ForeColor = Color.FromArgb(203, 213, 225),
+            Font = new Font("Segoe UI", 9F),
+            AutoSize = true,
+            Margin = new Padding(0, 8, 0, 0)
+        };
+        accountPanel.Controls.Add(_signOutButton);
+        accountPanel.Controls.Add(_changePasswordButton);
+        accountPanel.Controls.Add(_userLabel);
+        header.Controls.Add(accountPanel);
+
+        _signOutButton.Click += (_, _) => SignOut();
+        _changePasswordButton.Click += (_, _) => ChangePassword();
+
+        _api.SessionExpired += OnSessionExpired;
+        FormClosed += (_, _) => _api.SessionExpired -= OnSessionExpired;
 
         Controls.Add(_tabs);
         Controls.Add(_statusStrip);
@@ -105,6 +165,10 @@ public sealed class MainForm : Form
         return page;
     }
 
+    public bool SignOutRequested { get; private set; }
+
+    public bool SessionExpired { get; private set; }
+
     private async Task RefreshActiveTabAsync()
     {
         if (_tabs.SelectedTab?.Controls.Count > 0 &&
@@ -112,6 +176,56 @@ public sealed class MainForm : Form
         {
             await view.RefreshAsync();
         }
+    }
+
+    private void SignOut()
+    {
+        if (SignOutRequested)
+        {
+            return;
+        }
+
+        SignOutRequested = true;
+        _api.Logout();
+        Close();
+    }
+
+    private void ChangePassword()
+    {
+        using var dialog = new ChangePasswordDialog(_api);
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            "Your password was changed. Sign in again with your new password.",
+            "Ledger",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+
+        SignOut();
+    }
+
+    private void OnSessionExpired(object? sender, EventArgs e)
+    {
+        if (IsDisposed || Disposing || SignOutRequested)
+        {
+            return;
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(new Action(() => OnSessionExpired(sender, e)));
+            return;
+        }
+
+        SessionExpired = true;
+        SignOutRequested = true;
+        _api.Logout();
+        Close();
     }
 
     private void SetStatus(string message)

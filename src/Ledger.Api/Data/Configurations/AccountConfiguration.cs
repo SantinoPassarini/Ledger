@@ -12,6 +12,14 @@ public sealed class AccountConfiguration : IEntityTypeConfiguration<Account>
 
         builder.HasKey(account => account.Id);
 
+        builder.Property(account => account.UserId)
+            .IsRequired();
+
+        builder.HasOne(account => account.User)
+            .WithMany(user => user.Accounts)
+            .HasForeignKey(account => account.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.Property(account => account.Name)
             .IsRequired()
             .HasMaxLength(100);
@@ -32,5 +40,7 @@ public sealed class AccountConfiguration : IEntityTypeConfiguration<Account>
         builder.Property(account => account.CreatedAtUtc)
             .HasColumnType("timestamptz")
             .HasDefaultValueSql("now()");
+
+        builder.HasIndex(account => new { account.UserId, account.Name });
     }
 }

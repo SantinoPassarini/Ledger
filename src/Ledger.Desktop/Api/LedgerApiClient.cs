@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -14,6 +16,8 @@ public sealed class LedgerApiClient : IDisposable
     };
 
     private readonly HttpClient _http;
+    private string? _accessToken;
+    private bool _sessionExpiredRaised;
 
     public LedgerApiClient(string baseUrl)
     {
@@ -29,7 +33,90 @@ public sealed class LedgerApiClient : IDisposable
         };
     }
 
+    public event EventHandler? SessionExpired;
+
     public string BaseUrl => _http.BaseAddress?.ToString() ?? string.Empty;
+
+    public bool IsAuthenticated => !string.IsNullOrWhiteSpace(_accessToken);
+
+    public UserModel? CurrentUser { get; private set; }
+
+    public async Task<UserModel> LoginAsync(
+        string identifier,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        return await LoginAsync(new LoginInput(identifier, password), cancellationToken);
+    }
+
+    public async Task<UserModel> LoginAsync(
+        LoginInput input,
+        CancellationToken cancellationToken = default)
+    {
+        _accessToken = null;
+        CurrentUser = null;
+        _sessionExpiredRaised = false;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/auth/login")
+        {
+            Content = JsonContent.Create(input, options: JsonOptions)
+        };
+
+        using var response = await SendAsync(request, cancellationToken);
+        var result = await DeserializeAsync<LoginResultModel>(response, cancellationToken);
+
+        _accessToken = result.AccessToken;
+        CurrentUser = result.User;
+        return result.User;
+    }
+
+    public async Task<UserModel> GetCurrentUserAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var user = await GetAsync<UserModel>("api/v1/auth/me", cancellationToken);
+        CurrentUser = user;
+        return user;
+    }
+
+    public async Task<RegisterResultModel> RegisterAsync(
+        RegisterInput input,
+        CancellationToken cancellationToken = default)
+    {
+        _accessToken = null;
+        CurrentUser = null;
+        _sessionExpiredRaised = false;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/auth/register")
+        {
+            Content = JsonContent.Create(input, options: JsonOptions)
+        };
+
+        using var response = await SendAsync(request, cancellationToken);
+        var result = await DeserializeAsync<RegisterResultModel>(response, cancellationToken);
+
+        _accessToken = result.AccessToken;
+        CurrentUser = result.User;
+        return result;
+    }
+
+    public async Task ChangePasswordAsync(
+        ChangePasswordInput input,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/auth/change-password")
+        {
+            Content = JsonContent.Create(input, options: JsonOptions)
+        };
+
+        using var response = await SendAsync(request, cancellationToken);
+    }
+
+    public void Logout()
+    {
+        _accessToken = null;
+        CurrentUser = null;
+        _sessionExpiredRaised = false;
+    }
 
     public async Task<IReadOnlyList<AccountModel>> GetAccountsAsync(
         bool includeArchived = false,
@@ -200,6 +287,63 @@ public sealed class LedgerApiClient : IDisposable
         using var response = await SendAsync(request, cancellationToken);
     }
 
+    public async Task<DashboardModel> GetDashboardAsync(
+        DateOnly? month = null,
+        CancellationToken cancellationToken = default)
+    {
+        var path = AddQuery(
+            "api/v1/dashboard",
+            ("month", month?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+
+        return await GetAsync<DashboardModel>(path, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<BudgetModel>> GetBudgetsAsync(
+        DateOnly? month = null,
+        bool includeArchived = false,
+        CancellationToken cancellationToken = default)
+    {
+        var path = AddQuery(
+            "api/v1/budgets",
+            ("month", month?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
+            ("includeArchived", includeArchived ? "true" : null));
+
+        return await GetAsync<List<BudgetModel>>(path, cancellationToken);
+    }
+
+    public async Task<BudgetModel> CreateBudgetAsync(
+        BudgetInput input,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/budgets")
+        {
+            Content = JsonContent.Create(input, options: JsonOptions)
+        };
+
+        using var response = await SendAsync(request, cancellationToken);
+        return await DeserializeAsync<BudgetModel>(response, cancellationToken);
+    }
+
+    public async Task<BudgetModel> UpdateBudgetAsync(
+        Guid id,
+        BudgetUpdateInput input,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/budgets/{id}")
+        {
+            Content = JsonContent.Create(input, options: JsonOptions)
+        };
+
+        using var response = await SendAsync(request, cancellationToken);
+        return await DeserializeAsync<BudgetModel>(response, cancellationToken);
+    }
+
+    public async Task ArchiveBudgetAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/budgets/{id}");
+        using var response = await SendAsync(request, cancellationToken);
+    }
+
     public void Dispose()
     {
         _http.Dispose();
@@ -229,6 +373,12 @@ public sealed class LedgerApiClient : IDisposable
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
+        if (!string.IsNullOrWhiteSpace(_accessToken))
+        {
+            request.Headers.Authorization =
+                new AuthenticationHeaderValue("Bearer", _accessToken);
+        }
+
         var response = await _http.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
@@ -237,6 +387,14 @@ public sealed class LedgerApiClient : IDisposable
         if (response.IsSuccessStatusCode)
         {
             return response;
+        }
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized &&
+            IsAuthenticated &&
+            !_sessionExpiredRaised)
+        {
+            _sessionExpiredRaised = true;
+            SessionExpired?.Invoke(this, EventArgs.Empty);
         }
 
         var statusCode = (int)response.StatusCode;

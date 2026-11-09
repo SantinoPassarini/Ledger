@@ -1,9 +1,18 @@
 param(
     [string]$ApiBaseUrl = 'http://localhost:5100/',
+    [string]$Identifier = $env:LEDGER_SMOKE_IDENTIFIER,
+    [string]$Password = $env:LEDGER_SMOKE_PASSWORD,
     [switch]$Screenshots
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($Identifier) -or [string]::IsNullOrWhiteSpace($Password)) {
+    Write-Host 'Credentials are required. Pass -Identifier and -Password, or set'
+    Write-Host 'LEDGER_SMOKE_IDENTIFIER and LEDGER_SMOKE_PASSWORD.'
+    Write-Host 'The account must be provisioned in the API through user secrets or environment variables.'
+    exit 1
+}
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $artifacts = Join-Path $repoRoot 'artifacts\smoke'
@@ -20,6 +29,11 @@ if ($LASTEXITCODE -ne 0) {
 
 $env:ASPNETCORE_ENVIRONMENT = 'Development'
 $env:ASPNETCORE_URLS = $ApiBaseUrl.TrimEnd('/')
+
+# The API reads Ledger:Owner, Ledger:Users and Jwt:SigningKey from user secrets or the
+# current environment. This script must not override them with values from the repository.
+$env:LEDGER_SMOKE_IDENTIFIER = $Identifier
+$env:LEDGER_SMOKE_PASSWORD = $Password
 
 $api = Start-Process -FilePath dotnet `
     -ArgumentList $apiDll `

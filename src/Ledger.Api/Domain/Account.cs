@@ -4,6 +4,10 @@ public sealed class Account
 {
     public Guid Id { get; set; }
 
+    public Guid UserId { get; set; }
+
+    public User User { get; set; } = null!;
+
     public string Name { get; set; } = string.Empty;
 
     public AccountType Type { get; set; }

@@ -1,5 +1,6 @@
 using Ledger.Desktop.Api;
 using Ledger.Desktop.Configuration;
+using Ledger.Desktop.Dialogs;
 
 namespace Ledger.Desktop;
 
@@ -16,7 +17,33 @@ internal static class Program
 
             using var api = new LedgerApiClient(apiBaseUrl);
 
-            Application.Run(new MainForm(api, apiBaseUrl));
+            while (true)
+            {
+                using (var login = new LoginForm(api, apiBaseUrl))
+                {
+                    if (login.ShowDialog() != DialogResult.OK)
+                    {
+                        return;
+                    }
+                }
+
+                using var mainForm = new MainForm(api, apiBaseUrl);
+                Application.Run(mainForm);
+
+                if (!mainForm.SignOutRequested)
+                {
+                    return;
+                }
+
+                if (mainForm.SessionExpired)
+                {
+                    MessageBox.Show(
+                        "Your session expired. Please sign in again.",
+                        "Ledger",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+            }
         }
         catch (Exception exception)
         {

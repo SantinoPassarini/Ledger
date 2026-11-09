@@ -1,3 +1,5 @@
+using System.Data;
+using Ledger.Api.Auth;
 using Ledger.Api.Contracts.Transactions;
 using Ledger.Api.Contracts.Transfers;
 using Ledger.Api.Data;
@@ -14,10 +16,12 @@ public sealed class TransfersController : ControllerBase
     private const decimal MaxAmount = 9_999_999_999_999_999.99m;
 
     private readonly LedgerDbContext _db;
+    private readonly ICurrentUser _currentUser;
 
-    public TransfersController(LedgerDbContext db)
+    public TransfersController(LedgerDbContext db, ICurrentUser currentUser)
     {
         _db = db;
+        _currentUser = currentUser;
     }
 
     [HttpPost]
@@ -74,18 +78,47 @@ public sealed class TransfersController : ControllerBase
                 detail: "Transfers cannot use archived accounts.");
         }
 
+        var amount = request.Amount!.Value;
+        var transferDate = request.Date!.Value;
+
+        await using var dbTransaction = await _db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            cancellationToken);
+
+        var sourceBalance = await _db.Transactions
+            .AsNoTracking()
+            .Where(candidate =>
+                candidate.AccountId == fromAccount.Id &&
+                !candidate.IsArchived)
+            .SumAsync(candidate =>
+                candidate.Type == TransactionType.Income ||
+                candidate.Type == TransactionType.TransferIn
+                    ? candidate.Amount
+                    : -candidate.Amount,
+                cancellationToken);
+
+        if (sourceBalance < amount)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Insufficient funds",
+                detail: $"The source account balance is {sourceBalance:N2}, which is less than the transfer amount {amount:N2}.");
+        }
+
         var now = DateTime.UtcNow;
         var transferGroupId = Guid.NewGuid();
         var description = NormalizeDescription(request.Description);
+        var userId = _currentUser.RequireUserId();
 
         var outTransaction = new Transaction
         {
             Id = Guid.NewGuid(),
+            UserId = userId,
             AccountId = fromAccount.Id,
             CategoryId = null,
             Type = TransactionType.TransferOut,
-            Amount = request.Amount!.Value,
-            Date = request.Date!.Value,
+            Amount = amount,
+            Date = transferDate,
             Description = description,
             TransferGroupId = transferGroupId,
             CreatedAtUtc = now,
@@ -95,22 +128,21 @@ public sealed class TransfersController : ControllerBase
         var inTransaction = new Transaction
         {
             Id = Guid.NewGuid(),
+            UserId = userId,
             AccountId = toAccount.Id,
             CategoryId = null,
             Type = TransactionType.TransferIn,
-            Amount = request.Amount.Value,
-            Date = request.Date.Value,
+            Amount = amount,
+            Date = transferDate,
             Description = description,
             TransferGroupId = transferGroupId,
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
 
-        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
-
         _db.Transactions.AddRange(outTransaction, inTransaction);
         await _db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        await dbTransaction.CommitAsync(cancellationToken);
 
         return CreatedAtAction(
             nameof(GetByGroupId),

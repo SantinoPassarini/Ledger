@@ -1,11 +1,13 @@
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Net;
 using System.Reflection;
 using System.Windows.Forms;
 using Ledger.Desktop;
 using Ledger.Desktop.Api;
 using Ledger.Desktop.Dialogs;
 using Ledger.Desktop.Models;
+using Ledger.Desktop.Ui;
 
 internal static class Program
 {
@@ -25,18 +27,62 @@ internal static class Program
         _screenshotDirectory = GetOption(args, "--screenshot-dir")
             ?? Path.Combine(FindRepositoryRoot(), "artifacts", "smoke");
 
+        var identifier = GetOption(args, "--identifier")
+            ?? GetOption(args, "--email")
+            ?? Environment.GetEnvironmentVariable("LEDGER_SMOKE_IDENTIFIER")
+            ?? Environment.GetEnvironmentVariable("LEDGER_OWNER_EMAIL");
+        var password = GetOption(args, "--password")
+            ?? Environment.GetEnvironmentVariable("LEDGER_SMOKE_PASSWORD")
+            ?? Environment.GetEnvironmentVariable("LEDGER_OWNER_PASSWORD");
+
+        if (string.IsNullOrWhiteSpace(identifier) || string.IsNullOrWhiteSpace(password))
+        {
+            Console.WriteLine(
+                "FAIL | credentials | pass --identifier and --password or set LEDGER_SMOKE_IDENTIFIER and LEDGER_SMOKE_PASSWORD");
+            Console.WriteLine("FAILURES=1");
+            return 1;
+        }
+
         using var api = new LedgerApiClient(apiBaseUrl);
+
+        using (var anonymous = new HttpClient { BaseAddress = new Uri(apiBaseUrl.TrimEnd('/') + "/") })
+        {
+            using var response = await anonymous.GetAsync("api/v1/accounts");
+            Check(
+                "unauthenticated request is rejected",
+                response.StatusCode == HttpStatusCode.Unauthorized,
+                $"status={(int)response.StatusCode}");
+        }
+
+        try
+        {
+            var user = await api.LoginAsync(identifier, password);
+            Check(
+                "login",
+                api.IsAuthenticated && !string.IsNullOrWhiteSpace(user.Username),
+                user.Username);
+        }
+        catch (Exception exception)
+        {
+            Check("login", false, exception.Message);
+            Console.WriteLine($"FAILURES={_failures}");
+            return 1;
+        }
+
         var suffix = Guid.NewGuid().ToString("N");
         var accountName = $"[TEST] Desktop {suffix}";
         var transferAccountName = $"[TEST] Desktop transfer {suffix}";
         var categoryName = $"[TEST] Desktop category {suffix}";
+        var budgetCategoryName = $"[TEST] Desktop budget category {suffix}";
         var description = $"[TEST] desktop smoke {suffix}";
         var transferDescription = $"[TEST] desktop transfer {suffix}";
         AccountModel? account = null;
         AccountModel? transferAccount = null;
         CategoryModel? category = null;
+        CategoryModel? budgetCategory = null;
         TransactionModel? transaction = null;
         TransferModel? transfer = null;
+        BudgetModel? budget = null;
 
         try
         {
@@ -49,6 +95,13 @@ internal static class Program
             var firstPage = await api.GetTransactionsAsync(new TransactionQuery { PageSize = 5 });
             Check("GET transactions", firstPage.PageSize == 5, $"total={firstPage.TotalCount}");
 
+            var currentMonth = new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var dashboardBaseline = await api.GetDashboardAsync(currentMonth);
+            Check(
+                "GET dashboard",
+                dashboardBaseline.Month == currentMonth && dashboardBaseline.MonthlyTrend.Count == 6,
+                $"{dashboardBaseline.Month:yyyy-MM} trend={dashboardBaseline.MonthlyTrend.Count}");
+
             account = await api.CreateAccountAsync(new AccountInput(accountName, AccountType.Wallet));
             Check("create account", account.Balance == 0m, account.Id.ToString());
 
@@ -59,6 +112,10 @@ internal static class Program
             category = await api.CreateCategoryAsync(
                 new CategoryInput(categoryName, CategoryKind.Income));
             Check("create category", category.Kind == CategoryKind.Income);
+
+            budgetCategory = await api.CreateCategoryAsync(
+                new CategoryInput(budgetCategoryName, CategoryKind.Expense));
+            Check("create budget category", budgetCategory.Kind == CategoryKind.Expense);
 
             transaction = await api.CreateTransactionAsync(
                 new TransactionInput(
@@ -121,6 +178,27 @@ internal static class Program
                 sourceAfterTransfer.Balance == 150.25m && destinationAfterTransfer.Balance == 50.25m,
                 $"{sourceAfterTransfer.Balance:N2} -> {destinationAfterTransfer.Balance:N2}");
 
+            var dashboard = await api.GetDashboardAsync(currentMonth);
+            Check(
+                "dashboard total balance reflects activity",
+                dashboard.TotalBalance == dashboardBaseline.TotalBalance + 200.50m,
+                $"expected={dashboardBaseline.TotalBalance + 200.50m:N2} actual={dashboard.TotalBalance:N2}");
+            Check(
+                "dashboard month income reflects activity",
+                dashboard.MonthIncome == dashboardBaseline.MonthIncome + 200.50m,
+                $"expected={dashboardBaseline.MonthIncome + 200.50m:N2} actual={dashboard.MonthIncome:N2}");
+            Check(
+                "dashboard account balances",
+                dashboard.AccountBalances.Single(candidate => candidate.AccountId == account.Id).Balance == 150.25m &&
+                dashboard.AccountBalances
+                    .Single(candidate => candidate.AccountId == transferAccount.Id).Balance == 50.25m,
+                $"{dashboard.AccountBalances.Count} account(s)");
+            Check(
+                "dashboard recent includes transfer",
+                dashboard.RecentTransactions.Any(candidate =>
+                    candidate.TransferGroupId == transfer.TransferGroupId),
+                $"{dashboard.RecentTransactions.Count} recent transaction(s)");
+
             var transferSearch = await api.GetTransactionsAsync(
                 new TransactionQuery
                 {
@@ -129,14 +207,71 @@ internal static class Program
                 });
             Check("search transfer legs", transferSearch.TotalCount == 2, transferSearch.TotalCount.ToString());
 
+            try
+            {
+                await api.CreateTransferAsync(
+                    new TransferInput(
+                        account.Id,
+                        transferAccount.Id,
+                        1000m,
+                        DateOnly.FromDateTime(DateTime.Today),
+                        $"[TEST] insufficient {suffix}"));
+                Check("transfer rejects insufficient funds", false, "transfer was created");
+            }
+            catch (ApiException exception)
+            {
+                Check(
+                    "transfer rejects insufficient funds",
+                    exception.StatusCode == 409,
+                    $"status={exception.StatusCode}");
+            }
+
+            var afterRejectedTransfer = await api.GetAccountsAsync(includeArchived: true);
+            Check(
+                "balances unchanged after rejected transfer",
+                afterRejectedTransfer.Single(candidate => candidate.Id == account.Id).Balance == 150.25m &&
+                afterRejectedTransfer.Single(candidate => candidate.Id == transferAccount.Id).Balance == 50.25m,
+                "no balance change");
+
+            budget = await api.CreateBudgetAsync(
+                new BudgetInput(budgetCategory.Id, currentMonth, 500m));
+            Check(
+                "create budget",
+                budget.Month == currentMonth && budget.Amount == 500m && budget.Spent == 0m,
+                $"{budget.Month:yyyy-MM} amount={budget.Amount:N2} spent={budget.Spent:N2}");
+
+            var budgets = await api.GetBudgetsAsync(currentMonth);
+            Check(
+                "GET budgets",
+                budgets.Any(candidate => candidate.Id == budget.Id),
+                $"{budgets.Count} budget(s)");
+
+            var updatedBudget = await api.UpdateBudgetAsync(
+                budget.Id,
+                new BudgetUpdateInput(450m));
+            Check("update budget", updatedBudget.Amount == 450m && updatedBudget.Remaining == 450m);
+
             RunUiSmoke(
                 api,
                 apiBaseUrl,
                 account,
                 transferAccount,
                 category,
+                budgetCategory,
                 description,
                 transferDescription);
+
+            await api.ArchiveBudgetAsync(budget.Id);
+
+            var visibleBudgets = await api.GetBudgetsAsync(currentMonth);
+            Check(
+                "archived budget hidden by default",
+                visibleBudgets.All(candidate => candidate.Id != budget.Id));
+
+            var allBudgets = await api.GetBudgetsAsync(currentMonth, includeArchived: true);
+            Check(
+                "archived budget visible with includeArchived",
+                allBudgets.Any(candidate => candidate.Id == budget.Id && candidate.IsArchived));
 
             await api.ArchiveTransferAsync(transfer.TransferGroupId);
 
@@ -166,6 +301,7 @@ internal static class Program
             await api.ArchiveAccountAsync(account.Id);
             await api.ArchiveAccountAsync(transferAccount.Id);
             await api.ArchiveCategoryAsync(category.Id);
+            await api.ArchiveCategoryAsync(budgetCategory.Id);
 
             var hiddenAccounts = await api.GetAccountsAsync(includeArchived: false);
             Check("archived account hidden by default", hiddenAccounts.All(candidate => candidate.Id != account.Id));
@@ -236,6 +372,28 @@ internal static class Program
                 {
                 }
             }
+
+            if (budget is not null)
+            {
+                try
+                {
+                    await api.ArchiveBudgetAsync(budget.Id);
+                }
+                catch
+                {
+                }
+            }
+
+            if (budgetCategory is not null)
+            {
+                try
+                {
+                    await api.ArchiveCategoryAsync(budgetCategory.Id);
+                }
+                catch
+                {
+                }
+            }
         }
 
         Console.WriteLine($"FAILURES={_failures}");
@@ -248,6 +406,7 @@ internal static class Program
         AccountModel account,
         AccountModel transferAccount,
         CategoryModel category,
+        CategoryModel budgetCategory,
         string description,
         string transferDescription)
     {
@@ -298,6 +457,33 @@ internal static class Program
                     Check("TransferDialog constructs", true);
                 }
 
+                using (var budgetDialog = new BudgetDialog(
+                           "New budget",
+                           new[] { budgetCategory },
+                           new DateOnly(DateTime.Today.Year, DateTime.Today.Month, 1)))
+                {
+                    budgetDialog.CreateControl();
+                    Check("BudgetDialog constructs", true);
+                }
+
+                using (var loginForm = new LoginForm(api, apiBaseUrl))
+                {
+                    loginForm.CreateControl();
+                    Check("LoginForm constructs", true);
+                }
+
+                using (var registerForm = new RegisterForm(api))
+                {
+                    registerForm.CreateControl();
+                    Check("RegisterForm constructs", true);
+                }
+
+                using (var changePasswordDialog = new ChangePasswordDialog(api))
+                {
+                    changePasswordDialog.CreateControl();
+                    Check("ChangePasswordDialog constructs", true);
+                }
+
                 using var form = new MainForm(api, apiBaseUrl);
                 form.CreateControl();
                 Check("MainForm constructs", true);
@@ -307,6 +493,9 @@ internal static class Program
                     .GetValue(form);
                 var statusStrip = (StatusStrip?)typeof(MainForm)
                     .GetField("_statusStrip", BindingFlags.NonPublic | BindingFlags.Instance)?
+                    .GetValue(form);
+                var userLabel = (Label?)typeof(MainForm)
+                    .GetField("_userLabel", BindingFlags.NonPublic | BindingFlags.Instance)?
                     .GetValue(form);
 
                 var step = 0;
@@ -318,10 +507,18 @@ internal static class Program
                         switch (step)
                         {
                             case 0:
-                                Capture(form, "ledger-ui-accounts.png");
-                                Check("Accounts tab renders", true);
+                                Capture(form, "ledger-ui-dashboard.png");
+                                Check("Dashboard tab renders", true);
                                 Check("MainForm tabs found", tabs is not null);
                                 Check("MainForm status strip found", statusStrip is not null);
+                                Check(
+                                    "MainForm shows signed-in user",
+                                    userLabel is not null &&
+                                    string.Equals(
+                                        userLabel.Text,
+                                        api.CurrentUser?.Username,
+                                        StringComparison.Ordinal),
+                                    userLabel?.Text);
 
                                 if (tabs is not null && statusStrip is not null)
                                 {
@@ -330,8 +527,89 @@ internal static class Program
                                         "Layout: tabs above status strip",
                                         tabs.Bottom <= statusStrip.Top,
                                         $"tabsBottom={tabs.Bottom} statusTop={statusStrip.Top}");
+                                    Check(
+                                        "MainForm has expected tabs",
+                                        ContainsTab(tabs, "Dashboard") &&
+                                        ContainsTab(tabs, "Accounts") &&
+                                        ContainsTab(tabs, "Categories") &&
+                                        ContainsTab(tabs, "Budgets") &&
+                                        ContainsTab(tabs, "Transactions"),
+                                        string.Join(
+                                            ", ",
+                                            tabs.TabPages.Cast<TabPage>().Select(page => page.Text)));
 
-                                    var accountsGrid = FindGrid(tabs.TabPages[0]);
+                                    var dashboardPage = FindTab(tabs, "Dashboard");
+                                    Check("Dashboard tab found", dashboardPage is not null);
+
+                                    var totalBalance = FindNamedControl<Label>(
+                                        dashboardPage,
+                                        "DashboardTotalBalanceValue");
+                                    var income = FindNamedControl<Label>(dashboardPage, "DashboardIncomeValue");
+                                    var expenses = FindNamedControl<Label>(
+                                        dashboardPage,
+                                        "DashboardExpensesValue");
+
+                                    Check(
+                                        "Dashboard total balance card loaded",
+                                        totalBalance is not null && totalBalance.Text != "-",
+                                        totalBalance?.Text);
+                                    Check(
+                                        "Dashboard income card loaded",
+                                        income is not null && income.Text != "-",
+                                        income?.Text);
+                                    Check(
+                                        "Dashboard expenses card loaded",
+                                        expenses is not null && expenses.Text != "-",
+                                        expenses?.Text);
+
+                                    var monthlyChart = FindNamedControl<MonthlyBarChart>(
+                                        dashboardPage,
+                                        "DashboardMonthlyChart");
+                                    var trendGrid = FindNamedControl<DataGridView>(
+                                        dashboardPage,
+                                        "DashboardTrendGrid");
+                                    var recentGrid = FindNamedControl<DataGridView>(
+                                        dashboardPage,
+                                        "DashboardRecentGrid");
+
+                                    Check(
+                                        "Dashboard chart has six months",
+                                        monthlyChart?.Data.Count == 6,
+                                        $"months={monthlyChart?.Data.Count}");
+                                    Check(
+                                        "Dashboard chart has activity",
+                                        monthlyChart is not null &&
+                                        monthlyChart.Data.Any(entry =>
+                                            entry.Income > 0m || entry.Expenses > 0m),
+                                        $"months={monthlyChart?.Data.Count}");
+                                    Check(
+                                        "Dashboard trend has six months",
+                                        trendGrid?.Rows.Count == 6,
+                                        $"rows={trendGrid?.Rows.Count}");
+                                    Check(
+                                        "Dashboard recent grid contains test transaction",
+                                        recentGrid is not null && GridContains(recentGrid, description),
+                                        $"rows={recentGrid?.Rows.Count}");
+                                    Check(
+                                        "Dashboard recent grid contains transfer",
+                                        recentGrid is not null &&
+                                        GridContains(recentGrid, transferDescription),
+                                        $"rows={recentGrid?.Rows.Count}");
+
+                                    SelectTab(tabs, "Accounts");
+                                }
+
+                                step = 1;
+                                break;
+
+                            case 1:
+                                Capture(form, "ledger-ui-accounts.png");
+                                Check("Accounts tab renders", true);
+
+                                if (tabs is not null)
+                                {
+                                    var accountsPage = FindTab(tabs, "Accounts");
+                                    var accountsGrid = accountsPage is null ? null : FindGrid(accountsPage);
                                     Check(
                                         "Accounts grid contains test account",
                                         accountsGrid is not null && GridContains(accountsGrid, account.Name),
@@ -341,19 +619,87 @@ internal static class Program
                                         accountsGrid?.Columns.Count == 5,
                                         $"columns={accountsGrid?.Columns.Count}");
 
-                                    tabs.SelectedIndex = 2;
+                                    SelectTab(tabs, "Categories");
                                 }
 
-                                step = 1;
+                                step = 2;
                                 break;
 
-                            case 1:
+                            case 2:
+                                Capture(form, "ledger-ui-categories.png");
+                                Check("Categories tab renders", true);
+
+                                if (tabs is not null)
+                                {
+                                    var categoriesPage = FindTab(tabs, "Categories");
+                                    var categoriesGrid = categoriesPage is null
+                                        ? null
+                                        : FindGrid(categoriesPage);
+                                    Check(
+                                        "Categories grid contains test category",
+                                        categoriesGrid is not null &&
+                                        GridContains(categoriesGrid, category.Name),
+                                        $"rows={categoriesGrid?.Rows.Count}");
+                                    Check(
+                                        "Categories grid contains budget category",
+                                        categoriesGrid is not null &&
+                                        GridContains(categoriesGrid, budgetCategory.Name),
+                                        $"rows={categoriesGrid?.Rows.Count}");
+                                    Check(
+                                        "Categories grid columns",
+                                        categoriesGrid?.Columns.Count == 3,
+                                        $"columns={categoriesGrid?.Columns.Count}");
+
+                                    SelectTab(tabs, "Budgets");
+                                }
+
+                                step = 3;
+                                break;
+
+                            case 3:
+                                Capture(form, "ledger-ui-budgets.png");
+                                Check("Budgets tab renders", true);
+
+                                if (tabs is not null)
+                                {
+                                    var budgetsPage = FindTab(tabs, "Budgets");
+                                    var budgetsGrid = FindNamedControl<DataGridView>(
+                                        budgetsPage,
+                                        "BudgetsGrid");
+                                    var monthLabel = FindNamedControl<Label>(
+                                        budgetsPage,
+                                        "BudgetsMonthLabel");
+
+                                    Check(
+                                        "Budgets grid contains test budget",
+                                        budgetsGrid is not null &&
+                                        GridContains(budgetsGrid, budgetCategory.Name),
+                                        $"rows={budgetsGrid?.Rows.Count}");
+                                    Check(
+                                        "Budgets grid columns",
+                                        budgetsGrid?.Columns.Count == 7,
+                                        $"columns={budgetsGrid?.Columns.Count}");
+                                    Check(
+                                        "Budgets month label loaded",
+                                        monthLabel is not null && monthLabel.Text.Length > 0,
+                                        monthLabel?.Text);
+
+                                    SelectTab(tabs, "Transactions");
+                                }
+
+                                step = 4;
+                                break;
+
+                            case 4:
                                 Capture(form, "ledger-ui-transactions.png");
                                 Check("Transactions tab renders", true);
 
                                 if (tabs is not null && statusStrip is not null)
                                 {
-                                    var transactionsGrid = FindGrid(tabs.TabPages[2]);
+                                    var transactionsPage = FindTab(tabs, "Transactions");
+                                    var transactionsGrid = transactionsPage is null
+                                        ? null
+                                        : FindGrid(transactionsPage);
                                     var txDataSourceCount =
                                         transactionsGrid?.DataSource is System.Collections.ICollection collection
                                             ? collection.Count
@@ -364,7 +710,8 @@ internal static class Program
 
                                     Check(
                                         "Transactions grid contains test transaction",
-                                        transactionsGrid is not null && GridContains(transactionsGrid, description),
+                                        transactionsGrid is not null &&
+                                        GridContains(transactionsGrid, description),
                                         $"rows={transactionsGrid?.Rows.Count} items={txDataSourceCount} status={statusText}");
                                     Check(
                                         "Transactions grid contains transfer",
@@ -375,32 +722,10 @@ internal static class Program
                                         "Transactions grid columns",
                                         transactionsGrid?.Columns.Count == 7,
                                         $"columns={transactionsGrid?.Columns.Count}");
-
-                                    tabs.SelectedIndex = 1;
-                                }
-
-                                step = 2;
-                                break;
-
-                            case 2:
-                                Capture(form, "ledger-ui-categories.png");
-                                Check("Categories tab renders", true);
-
-                                if (tabs is not null && statusStrip is not null)
-                                {
-                                    var categoriesGrid = FindGrid(tabs.TabPages[1]);
-                                    Check(
-                                        "Categories grid contains test category",
-                                        categoriesGrid is not null && GridContains(categoriesGrid, category.Name),
-                                        $"rows={categoriesGrid?.Rows.Count}");
-                                    Check(
-                                        "Categories grid columns",
-                                        categoriesGrid?.Columns.Count == 3,
-                                        $"columns={categoriesGrid?.Columns.Count}");
                                 }
 
                                 timer.Stop();
-                                step = 3;
+                                step = 5;
                                 form.Close();
                                 break;
                         }
@@ -416,7 +741,7 @@ internal static class Program
                 form.Shown += (_, _) => timer.Start();
                 Application.Run(form);
 
-                Check("MainForm shows and closes", step == 3 && uiException is null, $"step={step}");
+                Check("MainForm shows and closes", step == 5 && uiException is null, $"step={step}");
             }
             catch (Exception exception)
             {
@@ -433,6 +758,59 @@ internal static class Program
             Console.WriteLine($"FAIL | UI thread exception | {uiException}");
             _failures++;
         }
+    }
+
+    private static bool ContainsTab(TabControl tabs, string text)
+    {
+        return FindTab(tabs, text) is not null;
+    }
+
+    private static TabPage? FindTab(TabControl tabs, string text)
+    {
+        return tabs.TabPages
+            .Cast<TabPage>()
+            .FirstOrDefault(page => string.Equals(page.Text, text, StringComparison.Ordinal));
+    }
+
+    private static void SelectTab(TabControl tabs, string text)
+    {
+        var page = FindTab(tabs, text);
+
+        if (page is not null)
+        {
+            tabs.SelectedTab = page;
+        }
+    }
+
+    private static Control? FindControl(Control? control, string name)
+    {
+        if (control is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(control.Name, name, StringComparison.Ordinal))
+        {
+            return control;
+        }
+
+        foreach (Control child in control.Controls)
+        {
+            var found = FindControl(child, name);
+
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    private static T? FindNamedControl<T>(Control? control, string name)
+        where T : Control
+    {
+        return FindControl(control, name) as T;
     }
 
     private static void Capture(Form form, string fileName)

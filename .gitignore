@@ -498,3 +498,4 @@ appsettings.*.local.json
 /artifacts/
 /screenshots/
 /exports/
+/backups/
