@@ -29,7 +29,9 @@ public sealed class LedgerApiClient : IDisposable
         _http = new HttpClient
         {
             BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/"),
-            Timeout = TimeSpan.FromSeconds(30)
+            // Render Free spins down after idle and needs up to about a minute to wake.
+            // Keep the client alive long enough for that first request to complete.
+            Timeout = TimeSpan.FromSeconds(100)
         };
     }
 

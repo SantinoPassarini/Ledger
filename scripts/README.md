@@ -4,8 +4,10 @@ Ledger backups are produced by standalone scripts. The API does not expose a bac
 
 | Script | Platform | Output |
 |---|---|---|
-| `backup-ledger.ps1` | Windows PowerShell 7+ | `backups/ledger-YYYYMMDD-HHmmss.dump` |
-| `backup-ledger.sh` | Linux/macOS Bash | `backups/ledger-YYYYMMDD-HHmmss.dump` |
+| `backup-ledger.ps1` | Windows PowerShell 7+ with PostgreSQL tools | `backups/ledger-YYYYMMDD-HHmmss.dump` |
+| `backup-ledger.sh` | Linux/macOS Bash with PostgreSQL tools | `backups/ledger-YYYYMMDD-HHmmss.dump` |
+| `backup-ledger-docker.ps1` | Windows with Docker | `backups/ledger-YYYYMMDD-HHmmss.dump` |
+| `backup-ledger-docker.sh` | Linux/macOS with Docker | `backups/ledger-YYYYMMDD-HHmmss.dump` |
 
 Both scripts:
 
@@ -14,10 +16,23 @@ Both scripts:
 - remove local backups older than the retention period,
 - never write a password into the repository.
 
+The Docker wrappers run those tools inside `postgres:17-alpine`, so the host only
+needs Docker. Use them when `pg_dump`/`pg_restore` are not installed.
+
 ## Requirements
 
-- PostgreSQL client tools (`pg_dump` and `pg_restore`) on `PATH`. Use a client version equal to or newer than the PostgreSQL server.
+- Either PostgreSQL client tools (`pg_dump` and `pg_restore`) on `PATH`, or Docker.
+  Use a client version equal to or newer than the PostgreSQL server.
 - A PostgreSQL connection string for the Ledger database. Keep it out of Git.
+
+The Docker wrappers accept both libpq URIs and Npgsql-style strings.
+
+## Render Free
+
+Render Free does not provide cron, one-off jobs, shell access, or pre-deploy
+commands. Run the backups from your machine (or another always-on machine), not from
+the Render service. A Free web service also loses its local filesystem on every
+restart, so never rely on files written inside the API container.
 
 ## Configure the connection
 
@@ -52,6 +67,21 @@ Bash:
 ./scripts/backup-ledger.sh
 ./scripts/backup-ledger.sh --output /srv/backups/ledger --retention-days 14
 ```
+
+With Docker (no local PostgreSQL tools):
+
+```powershell
+$env:LEDGER_BACKUP_CONNECTION = 'Host=...;Database=...;Username=...;Password=...;SSL Mode=Require'
+.\scripts\backup-ledger-docker.ps1 -OutputDirectory D:\Backups\Ledger
+```
+
+```bash
+export LEDGER_BACKUP_CONNECTION='postgresql://user:password@host/db?sslmode=require'
+./scripts/backup-ledger-docker.sh --output /srv/backups/ledger --retention-days 14
+```
+
+The Docker wrappers use `postgres:17-alpine` by default. Override the image with
+`-Image` / `--image` if you need a newer client.
 
 Optional flags: `--no-verify` / `-SkipVerification` skips the integrity check; `--keep-on-failure` / `-KeepOnFailure` keeps a partial file for inspection.
 
@@ -118,16 +148,17 @@ Windows Task Scheduler example action:
 
 ```text
 Program:   pwsh.exe
-Arguments: -NoProfile -File C:\path\to\Ledger\scripts\backup-ledger.ps1 -OutputDirectory D:\Backups\Ledger
+Arguments: -NoProfile -File C:\path\to\Ledger\scripts\backup-ledger-docker.ps1 -OutputDirectory D:\Backups\Ledger
 ```
 
 cron example:
 
 ```cron
-15 3 * * * . /etc/ledger/backup.env && /path/to/Ledger/scripts/backup-ledger.sh >> /var/log/ledger-backup.log 2>&1
+15 3 * * * . /etc/ledger/backup.env && /path/to/Ledger/scripts/backup-ledger-docker.sh >> /var/log/ledger-backup.log 2>&1
 ```
 
-Protect `/etc/ledger/backup.env` with permissions such as `chmod 600`, or use `.pgpass`.
+The non-Docker scripts work the same way if PostgreSQL tools are installed. Protect
+`/etc/ledger/backup.env` with permissions such as `chmod 600`, or use `.pgpass`.
 
 ## Verify backups regularly
 

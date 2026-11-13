@@ -10,7 +10,12 @@ Ledger es privado y lo usan 2 o 3 personas conocidas, pero eso no lo hace menos 
 2. [HTTPS](02-https.md): TLS, proxy inverso, certificados y redirección.
 3. [Empaquetado](03-empaquetado.md): publicar la API y el cliente de escritorio.
 4. [Backups](04-backups-programados.md): programar, copiar fuera del servidor y probar restores.
-5. Verificación final con la checklist de este documento.
+5. [Render Free](05-render.md): despliegue exacto en Render, límites del plan Free y verificación.
+6. Verificación final con la checklist de este documento.
+
+> Si desplegás en Render, `02-https.md` queda cubierto por el proxy de Render. Seguí
+> `05-render.md` para la configuración real y usá las otras guías como referencia de
+> secretos, empaquetado y backups.
 
 ## Principios que no se negocian
 
@@ -33,9 +38,9 @@ Ledger es privado y lo usan 2 o 3 personas conocidas, pero eso no lo hace menos 
 - [ ] El cliente de escritorio apunta a `https://...`.
 - [ ] Las migraciones se aplicaron antes de arrancar la API.
 - [ ] `/health` responde `Healthy`.
-- [ ] El backup diario corre solo y se copia fuera del servidor.
+- [ ] El backup corre desde una máquina externa (Render Free no ejecuta cron) y se copia fuera del servidor.
 - [ ] Se probó un restore en una base separada.
-- [ ] Las tres contraseñas débiles existentes se cambiaron antes de exponer el servicio.
+- [ ] Se decidió explícitamente si se cambian las contraseñas débiles existentes antes de exponer el servicio.
 
 ## Antes de exponer la API
 

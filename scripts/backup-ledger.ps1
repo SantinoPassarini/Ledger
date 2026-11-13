@@ -91,7 +91,9 @@ function ConvertFrom-LedgerConnectionString {
         $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
 
         try {
-            $builder.ConnectionString = $Value
+            # PowerShell 7.6 binds "ConnectionString = value" as a legacy property setter
+            # that treats the whole value as one key. Call the .NET setter explicitly.
+            $builder.set_ConnectionString($Value)
         } catch {
             throw "The connection string could not be parsed: $($_.Exception.Message)"
         }

@@ -93,7 +93,8 @@ public sealed class TransfersTests : ApiTestBase
         var all = await ReadAsync<PagedResponse<TransactionResponse>>(allResponse);
         Assert.Equal(2, all.TotalCount);
         var archivedLeg = Assert.Single(
-            all.Items.Where(item => item.TransferGroupId is not null));
+            all.Items,
+            item => item.TransferGroupId is not null);
         Assert.True(archivedLeg.IsArchived);
 
         Assert.Equal(25m, (await GetAccountAsync(source.Id)).Balance);

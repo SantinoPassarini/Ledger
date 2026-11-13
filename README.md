@@ -17,10 +17,15 @@ WinForms -> HTTP/JSON -> ASP.NET Core API -> EF Core -> PostgreSQL
 ```
 Ledger/
 ├── Ledger.sln
+├── Dockerfile               API image for Render
+├── render.yaml              Render Blueprint (Free plan)
 ├── src/
 │   ├── Ledger.Api/          ASP.NET Core Web API
 │   └── Ledger.Desktop/      Windows Forms client
-├── scripts/                 Standalone backup scripts and restore notes
+├── scripts/                 Standalone backup/release scripts
+├── docs/
+│   ├── deployment/          Production checklists
+│   └── onboarding/          End-user and owner onboarding
 ├── tests/
 │   ├── Ledger.Api.Tests/    API integration tests
 │   └── Ledger.Desktop.Smoke/
@@ -31,8 +36,9 @@ Ledger/
 
 - .NET 8 SDK
 - A PostgreSQL database (Neon) for the API
-- PostgreSQL client tools (`pg_dump` and `pg_restore`) for backups
+- Either PostgreSQL client tools (`pg_dump` and `pg_restore`) or Docker, for backups
 - Windows to run the desktop client
+- Docker to build the API image locally (optional)
 
 ## Building
 
@@ -45,18 +51,20 @@ dotnet build Ledger.sln
 API integration tests run against PostgreSQL and create a unique schema, so they do not modify existing data:
 
 ```powershell
+$env:LEDGER_TEST_CONNECTION = 'Host=localhost;Port=5432;Database=ledger_test;Username=postgres;Password=postgres'
 dotnet test tests/Ledger.Api.Tests/Ledger.Api.Tests.csproj
 ```
 
-They read `LEDGER_TEST_CONNECTION` or the `ConnectionStrings:Ledger` value from `Ledger.Api` user secrets. Never point tests at production data.
+`LEDGER_TEST_CONNECTION` is required. If it is missing, the tests fail explicitly; they never fall back to user secrets. Values pointing to `neon.tech` are rejected, because the tests create and drop schemas. Use a disposable local PostgreSQL instance (Docker is enough).
 
-The desktop smoke test requires a running API and a provisioned account:
+The desktop smoke test requires a running API, a disposable database and a provisioned account:
 
 ```powershell
+$env:LEDGER_TEST_CONNECTION = 'Host=localhost;Port=5432;Database=ledger_test;Username=postgres;Password=postgres'
 dotnet run --project tests/Ledger.Desktop.Smoke -- --identifier <username-or-email> --password <password>
 ```
 
-Or start the API automatically. The script reads `Ledger:*` credentials from user secrets or environment variables and does not override them:
+Or start the API automatically. The script requires `LEDGER_TEST_CONNECTION`, rejects Neon, overrides the connection string and replaces the JWT key for the local run:
 
 ```powershell
 .\tests\run-desktop-smoke.ps1 -Identifier <username-or-email> -Password <password>
@@ -90,7 +98,7 @@ If `Email` is omitted, the API uses `<username>@ledger.local`. Every configured 
 dotnet run --project src/Ledger.Api
 ```
 
-On startup the API creates or updates the configured owner and additional users and assigns their default categories. Sign in with either the username or the email. Swagger UI is available at `http://localhost:5100/swagger` in the Development environment; use the **Authorize** button with the token returned by `POST /api/v1/auth/login`.
+On startup in Development the API creates or updates the configured owner and additional users and assigns their default categories. In Production provisioning is **create-only**: existing accounts are never modified, so passwords changed through the API persist across restarts. Sign in with either the username or the email. Swagger UI is available at `http://localhost:5100/swagger` in the Development environment; use the **Authorize** button with the token returned by `POST /api/v1/auth/login`.
 
 ### Self-registration
 
@@ -116,7 +124,7 @@ Optional JWT settings:
 | `Jwt:SigningKey` | empty | Required, at least 32 characters |
 | `Jwt:AccessTokenMinutes` | `480` | Access token lifetime |
 
-If `Ledger:Owner:Username`/`Email`, `Ledger:Owner:Password` or `Jwt:SigningKey` are missing, the API still starts and `/health` responds, but sign-in is disabled for the affected account and an error is logged. Configured passwords must have at least 8 characters; self-registration and password changes require at least 12.
+`Jwt:SigningKey` is required in every environment and validated at startup; there is no insecure fallback key. In Development, if `Ledger:Owner:Username`/`Email` or `Ledger:Owner:Password` is missing, the API starts but sign-in is disabled for the affected account and an error is logged. In Production the API also validates `ConnectionStrings:Ledger` and the invite code (when registration is enabled) before accepting traffic and **fails fast** if any required value is missing. Configured passwords must have at least 8 characters; self-registration and password changes require at least 12.
 
 ## Running the desktop client
 
@@ -211,7 +219,7 @@ The API uses JWT Bearer authentication. `POST /api/v1/auth/login` returns a shor
 
 Every `Account`, `Category`, `Transaction` and `Budget` row stores a `UserId`. EF Core global query filters restrict reads to the authenticated user, and create operations assign the authenticated `UserId` explicitly. A second user cannot see or modify another user's rows, even when the GUID is known.
 
-There is no open registration. The owner account is provisioned from `Ledger:Owner` configuration at API startup, and every account in `Ledger:Users` is provisioned the same way. Self-registration is opt-in through `Ledger:Registration:Enabled` and the shared `Ledger:Registration:InviteCode`; it is disabled when either setting is missing. Each account gets its own default categories. Sign in with either the username or the email. To change a password, use **Change password** in the desktop client or call `POST /api/v1/auth/change-password` with the current and new password while authenticated. If the account was provisioned from configuration, also update the corresponding `Ledger:Owner:Password` or `Ledger:Users:<username>:Password` value so the provisioning service does not reset it on the next startup.
+There is no open registration. In Development, the owner account is provisioned from `Ledger:Owner` configuration at API startup, and every account in `Ledger:Users` is provisioned the same way. In Production provisioning is create-only: existing accounts and their passwords are never reset by a restart or by a stale environment variable. Self-registration is opt-in through `Ledger:Registration:Enabled` and the shared `Ledger:Registration:InviteCode`; it is disabled when either setting is missing. Each account gets its own default categories. Sign in with either the username or the email. To change a password, use **Change password** in the desktop client or call `POST /api/v1/auth/change-password` with the current and new password while authenticated. In Production no configuration update is needed after a password change. In Development, also update the corresponding `Ledger:Owner:Password` or `Ledger:Users:<username>:Password` value so the provisioning service does not reset it on the next startup.
 
 ## Transfers
 
@@ -249,19 +257,19 @@ Archived transactions and transactions belonging to archived accounts are exclud
 
 ## Backups
 
-Backups are produced by standalone scripts in `scripts/`, not by the API. They use `pg_dump --format=custom`, verify the archive with `pg_restore --list` and apply a retention policy:
+Backups are produced by standalone scripts in `scripts/`, not by the API. They use `pg_dump --format=custom`, verify the archive with `pg_restore --list` and apply a retention policy. If PostgreSQL tools are not installed, use the Docker wrappers:
 
 ```powershell
 $env:LEDGER_BACKUP_CONNECTION = 'postgresql://user:password@host/db?sslmode=require'
-.\scripts\backup-ledger.ps1 -OutputDirectory D:\Backups\Ledger
+.\scripts\backup-ledger-docker.ps1 -OutputDirectory D:\Backups\Ledger
 ```
 
 ```bash
 export LEDGER_BACKUP_CONNECTION='postgresql://user:password@host/db?sslmode=require'
-./scripts/backup-ledger.sh --output /srv/backups/ledger
+./scripts/backup-ledger-docker.sh --output /srv/backups/ledger
 ```
 
-The scripts only create local files. Copy them off-server on your own schedule with `rclone` or `scp`, and encrypt them with `age` if the destination is not fully trusted. `scripts/README.md` covers restore commands, off-server copy examples and scheduling. Test a restore periodically; a backup that has never been restored is only a hypothesis.
+The non-Docker scripts (`backup-ledger.ps1`, `backup-ledger.sh`) use local PostgreSQL tools. All wrappers only create local files. Copy them off-server on your own schedule with `rclone` or `scp`, and encrypt them with `age` if the destination is not fully trusted. `scripts/README.md` covers restore commands, off-server copy examples and scheduling. Render Free cannot run scheduled jobs inside the service, so run backups from your machine. Test a restore periodically; a backup that has never been restored is only a hypothesis.
 
 ## Deployment
 
@@ -271,6 +279,17 @@ The guides in `docs/deployment/` are hands-on checklists for taking Ledger to a 
 - `02-https.md`: TLS, reverse proxy, certificates and redirects.
 - `03-empaquetado.md`: publishing the API and the desktop client.
 - `04-backups-programados.md`: scheduling, off-server copies, monitoring and restore drills.
+- `05-render.md`: exact Render Free + Neon setup, limits and verification.
+
+`docs/onboarding/README.md` covers handing the client to the known users, invite codes, account changes and the fact that there is no automatic password recovery. `docs/onboarding/README-desktop.txt` is the end-user README embedded in the ZIP.
+
+Build the desktop release with an external, editable API URL:
+
+```powershell
+.\scripts\release-desktop.ps1 -Version 1.0.0 -ApiBaseUrl https://TU-SERVICIO.onrender.com/
+```
+
+The script produces a self-contained `win-x64` single-file executable, removes PDBs, writes `appsettings.json` and `README.txt`, creates the ZIP and writes SHA256 checksums under `artifacts/release/`.
 
 Implement each step on your server, then review the result before exposing the API. The guides also list what to verify and which points are reviewed.
 
@@ -290,4 +309,4 @@ Development and real financial data must not share a database once Ledger is use
 - **CP7**: budgets — done
 - **CP8**: authentication, JWT Bearer and per-user data isolation — done
 - **CP9**: self-registration, password change and standalone backups — done
-- **CP10**: deployment — guides ready in `docs/deployment/`; implementation and review in progress
+- **CP10**: deployment — Render Free artifacts, production validation and onboarding ready; public deployment pending

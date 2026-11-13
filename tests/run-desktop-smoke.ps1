@@ -14,6 +14,26 @@ if ([string]::IsNullOrWhiteSpace($Identifier) -or [string]::IsNullOrWhiteSpace($
     exit 1
 }
 
+$testConnection = $env:LEDGER_TEST_CONNECTION
+
+if ([string]::IsNullOrWhiteSpace($testConnection)) {
+    Write-Host 'LEDGER_TEST_CONNECTION is required. The desktop smoke test must run against'
+    Write-Host 'a disposable PostgreSQL database, never against Neon or production data.'
+    exit 1
+}
+
+if ($testConnection -match 'neon\.tech') {
+    Write-Host 'LEDGER_TEST_CONNECTION points to Neon. Use a disposable local PostgreSQL'
+    Write-Host 'database instead; the smoke test creates and archives records.'
+    exit 1
+}
+
+$env:ConnectionStrings__Ledger = $testConnection
+
+# Do not reuse a production JWT key from user secrets for a local smoke run.
+$env:Jwt__SigningKey = [Convert]::ToBase64String(
+    [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $artifacts = Join-Path $repoRoot 'artifacts\smoke'
 $apiDll = Join-Path $repoRoot 'src\Ledger.Api\bin\Debug\net8.0\Ledger.Api.dll'
@@ -31,7 +51,8 @@ $env:ASPNETCORE_ENVIRONMENT = 'Development'
 $env:ASPNETCORE_URLS = $ApiBaseUrl.TrimEnd('/')
 
 # The API reads Ledger:Owner, Ledger:Users and Jwt:SigningKey from user secrets or the
-# current environment. This script must not override them with values from the repository.
+# current environment. ConnectionStrings:Ledger is overridden above so this script can
+# never touch Neon or production data; the signing key is also replaced for the run.
 $env:LEDGER_SMOKE_IDENTIFIER = $Identifier
 $env:LEDGER_SMOKE_PASSWORD = $Password
 

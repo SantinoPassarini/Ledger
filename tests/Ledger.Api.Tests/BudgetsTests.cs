@@ -72,7 +72,8 @@ public sealed class BudgetsTests : ApiTestBase
 
         var budgets = await GetBudgetsAsync(month);
         var budget = Assert.Single(
-            budgets.Where(candidate => candidate.CategoryId == category.Id));
+            budgets,
+            candidate => candidate.CategoryId == category.Id);
 
         Assert.Equal(50m, budget.Spent);
         Assert.Equal(50m, budget.Remaining);
@@ -117,7 +118,8 @@ public sealed class BudgetsTests : ApiTestBase
 
         var budgets = await GetBudgetsAsync(month);
         var budget = Assert.Single(
-            budgets.Where(candidate => candidate.CategoryId == category.Id));
+            budgets,
+            candidate => candidate.CategoryId == category.Id);
 
         Assert.Equal(30m, budget.Spent);
         Assert.Equal(70m, budget.Remaining);
@@ -175,7 +177,8 @@ public sealed class BudgetsTests : ApiTestBase
 
         var all = await GetBudgetsAsync(month, includeArchived: true);
         var archived = Assert.Single(
-            all.Where(budget => budget.CategoryId == category.Id));
+            all,
+            budget => budget.CategoryId == category.Id);
         Assert.True(archived.IsArchived);
 
         var restored = await CreateBudgetAsync(category.Id, month, 250m);
@@ -186,7 +189,8 @@ public sealed class BudgetsTests : ApiTestBase
 
         var restoredList = await GetBudgetsAsync(month, includeArchived: true);
         var restoredBudget = Assert.Single(
-            restoredList.Where(budget => budget.CategoryId == category.Id));
+            restoredList,
+            budget => budget.CategoryId == category.Id);
         Assert.Equal(created.Id, restoredBudget.Id);
         Assert.False(restoredBudget.IsArchived);
     }

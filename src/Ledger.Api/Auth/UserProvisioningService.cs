@@ -16,13 +16,16 @@ public sealed class UserProvisioningService : IHostedService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<UserProvisioningService> _logger;
+    private readonly IHostEnvironment _environment;
 
     public UserProvisioningService(
         IServiceScopeFactory scopeFactory,
-        ILogger<UserProvisioningService> logger)
+        ILogger<UserProvisioningService> logger,
+        IHostEnvironment environment)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _environment = environment;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -54,8 +57,17 @@ public sealed class UserProvisioningService : IHostedService
 
         if (definitions.Count == 0)
         {
-            _logger.LogWarning(
-                "No Ledger users are configured. Sign-in is disabled.");
+            if (_environment.IsProduction())
+            {
+                _logger.LogInformation(
+                    "No users are configured for provisioning. Existing database accounts are left unchanged.");
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "No Ledger users are configured. Sign-in is disabled.");
+            }
+
             return;
         }
 
@@ -216,6 +228,17 @@ public sealed class UserProvisioningService : IHostedService
                     candidate.NormalizedUsername == normalizedUsername ||
                     candidate.NormalizedEmail == normalizedEmail,
                 cancellationToken);
+
+        // In Production, provisioning is create-only. Existing accounts may have been
+        // changed through the API (password, email, display name) and must not be reset by
+        // a restart or by a stale environment variable.
+        if (user is not null && _environment.IsProduction())
+        {
+            _logger.LogInformation(
+                "User {Username} already exists. Production provisioning does not modify existing accounts.",
+                user.Username);
+            return;
+        }
 
         if (user is null)
         {

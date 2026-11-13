@@ -49,18 +49,26 @@ public sealed class DashboardTests : ApiTestBase
 
         Assert.Equal(
             650m,
-            Assert.Single(dashboard.AccountBalances.Where(account => account.AccountId == source.Id)).Balance);
+            Assert.Single(
+                dashboard.AccountBalances,
+                account => account.AccountId == source.Id).Balance);
         Assert.Equal(
             100m,
-            Assert.Single(dashboard.AccountBalances.Where(account => account.AccountId == destination.Id)).Balance);
+            Assert.Single(
+                dashboard.AccountBalances,
+                account => account.AccountId == destination.Id).Balance);
 
         Assert.Contains(dashboard.RecentTransactions, transaction => transaction.Id == income.Id);
         Assert.Contains(dashboard.RecentTransactions, transaction => transaction.Id == expense.Id);
         Assert.Contains(dashboard.RecentTransactions, transaction => transaction.Id == transfer.OutTransaction.Id);
         Assert.Contains(dashboard.RecentTransactions, transaction => transaction.Id == transfer.InTransaction.Id);
 
-        var trend = Assert.Single(dashboard.MonthlyTrend.Where(entry => entry.Month == month));
-        var baselineTrend = Assert.Single(baseline.MonthlyTrend.Where(entry => entry.Month == month));
+        var trend = Assert.Single(
+            dashboard.MonthlyTrend,
+            entry => entry.Month == month);
+        var baselineTrend = Assert.Single(
+            baseline.MonthlyTrend,
+            entry => entry.Month == month);
         Assert.Equal(baselineTrend.Income + 1000m, trend.Income);
         Assert.Equal(baselineTrend.Expenses + 250m, trend.Expenses);
 
@@ -212,11 +220,13 @@ public sealed class DashboardTests : ApiTestBase
         Assert.Equal(
             30m,
             Assert.Single(
-                dashboard.ExpensesByCategory.Where(category => category.CategoryId == firstCategory.Id)).Amount);
+                dashboard.ExpensesByCategory,
+                category => category.CategoryId == firstCategory.Id).Amount);
         Assert.Equal(
             20m,
             Assert.Single(
-                dashboard.ExpensesByCategory.Where(category => category.CategoryId == secondCategory.Id)).Amount);
+                dashboard.ExpensesByCategory,
+                category => category.CategoryId == secondCategory.Id).Amount);
         Assert.DoesNotContain(
             dashboard.ExpensesByCategory,
             category => category.CategoryId == incomeCategory.Id);

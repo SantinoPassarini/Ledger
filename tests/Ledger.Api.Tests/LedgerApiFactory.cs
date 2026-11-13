@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
-using System.Text.Json;
 using Ledger.Api;
 using Ledger.Api.Contracts.Auth;
 using Ledger.Api.Data;
@@ -17,8 +16,6 @@ namespace Ledger.Api.Tests;
 
 public sealed class LedgerApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private const string ApiUserSecretsId = "82623afe-4824-474b-92f3-57dda12396de";
-
     public const string RegistrationInviteCode = "test-invite-code";
 
     private readonly string _signingKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
@@ -172,34 +169,29 @@ public sealed class LedgerApiFactory : WebApplicationFactory<Program>, IAsyncLif
 
     private static string ResolveBaseConnectionString()
     {
-        var environmentValue = Environment.GetEnvironmentVariable("LEDGER_TEST_CONNECTION");
+        return ValidateTestConnection(
+            Environment.GetEnvironmentVariable("LEDGER_TEST_CONNECTION"));
+    }
 
-        if (!string.IsNullOrWhiteSpace(environmentValue))
+    internal static string ValidateTestConnection(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
         {
-            return environmentValue;
+            throw new InvalidOperationException(
+                "LEDGER_TEST_CONNECTION is required. API tests create and drop a dedicated " +
+                "PostgreSQL schema and never fall back to user secrets. Start a disposable " +
+                "PostgreSQL instance (for example with Docker) and set LEDGER_TEST_CONNECTION " +
+                "before running the tests.");
         }
 
-        var secretsPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Microsoft",
-            "UserSecrets",
-            ApiUserSecretsId,
-            "secrets.json");
-
-        if (File.Exists(secretsPath))
+        if (value.Contains("neon.tech", StringComparison.OrdinalIgnoreCase))
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(secretsPath));
-
-            if (document.RootElement.TryGetProperty("ConnectionStrings:Ledger", out var value) &&
-                value.ValueKind == JsonValueKind.String &&
-                !string.IsNullOrWhiteSpace(value.GetString()))
-            {
-                return value.GetString()!;
-            }
+            throw new InvalidOperationException(
+                "LEDGER_TEST_CONNECTION points to Neon. API tests create and drop schemas, so " +
+                "they must run against a disposable local PostgreSQL instance.");
         }
 
-        throw new InvalidOperationException(
-            "No test database was configured. Set LEDGER_TEST_CONNECTION or configure the Ledger.Api user secret ConnectionStrings:Ledger.");
+        return value;
     }
 
     private sealed record LoginResult(string AccessToken);

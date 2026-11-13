@@ -18,12 +18,24 @@ The test factory generates a random JWT signing key and random passwords for eve
 
 ### Connection string
 
-The tests resolve the database in this order:
+`LEDGER_TEST_CONNECTION` is **required**. The test factory fails explicitly if it is
+missing and never falls back to user secrets. It also rejects values that contain
+`neon.tech`, because the tests create and drop PostgreSQL schemas and must not run
+against Neon or any shared database.
 
-1. `LEDGER_TEST_CONNECTION` environment variable.
-2. The `ConnectionStrings:Ledger` value in `Ledger.Api` user secrets.
+Use a disposable local PostgreSQL instance:
 
-Never point either value at production data. Use a dedicated development/test database.
+```powershell
+docker run --rm -d --name ledger-test `
+  -p 5432:5432 `
+  -e POSTGRES_PASSWORD=postgres `
+  -e POSTGRES_DB=ledger_test `
+  postgres:17-alpine
+
+$env:LEDGER_TEST_CONNECTION = 'Host=localhost;Port=5432;Database=ledger_test;Username=postgres;Password=postgres'
+```
+
+Never point this value at production data.
 
 Run:
 
@@ -38,14 +50,28 @@ or:
 ```
 
 CI uses a PostgreSQL service container and sets `LEDGER_TEST_CONNECTION` automatically.
+The production configuration validation and the test-connection guard also have unit
+tests (`ProductionConfigurationTests`, `TestConnectionTests`) that do not need a
+database.
 
 ## Desktop smoke test
 
 `Ledger.Desktop.Smoke` starts the real WinForms controls, reads accounts, categories, transactions, budgets and the dashboard from a running API, and verifies the grids, the monthly bar chart and the layout. It also creates a transfer between two test accounts, verifies both legs and the dashboard totals, checks that an over-balance transfer is rejected with `409 Conflict`, exercises budget creation and update, and archives everything it created.
 
-Start the API first. The target database must have the latest migrations applied (`dotnet ef database update --project src/Ledger.Api --startup-project src/Ledger.Api`).
+The smoke test needs a disposable PostgreSQL database, not Neon. Set
+`LEDGER_TEST_CONNECTION` before starting the API or using the helper script; the
+helper overrides `ConnectionStrings__Ledger` with that value and generates a random
+JWT signing key for the run. Account credentials still come from `Ledger:Owner` or
+`Ledger:Users` in user secrets or environment variables.
+
+The target database must have the latest migrations applied:
 
 ```powershell
+dotnet ef database update --project src/Ledger.Api --startup-project src/Ledger.Api
+```
+
+```powershell
+$env:LEDGER_TEST_CONNECTION = 'Host=localhost;Port=5432;Database=ledger_test;Username=postgres;Password=postgres'
 dotnet run --project src/Ledger.Api
 ```
 
@@ -63,7 +89,10 @@ Or use the helper script, which starts and stops the API for you:
 .\tests\run-desktop-smoke.ps1 -Identifier <username-or-email> -Password <password>
 ```
 
-The script does not override `Ledger:*` or `Jwt:*`. The API reads them from user secrets or the current environment, and the same credentials are passed to the smoke test through environment variables.
+The script requires `LEDGER_TEST_CONNECTION`, rejects `neon.tech`, overrides
+`ConnectionStrings__Ledger`, and replaces `Jwt__SigningKey` for the local run. It never
+modifies Neon. `Ledger:Owner` and `Ledger:Users` are read from user secrets or the
+current environment.
 
 If PowerShell blocks local scripts, run:
 
