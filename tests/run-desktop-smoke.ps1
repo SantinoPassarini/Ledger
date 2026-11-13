@@ -30,7 +30,7 @@ if ($testConnection -match 'neon\.tech') {
 
 $env:ConnectionStrings__Ledger = $testConnection
 
-# Do not reuse a production JWT key from user secrets for a local smoke run.
+# A production JWT key from user secrets must not be reused for a local smoke run.
 $env:Jwt__SigningKey = [Convert]::ToBase64String(
     [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
 

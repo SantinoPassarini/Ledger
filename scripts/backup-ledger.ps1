@@ -92,7 +92,7 @@ function ConvertFrom-LedgerConnectionString {
 
         try {
             # PowerShell 7.6 binds "ConnectionString = value" as a legacy property setter
-            # that treats the whole value as one key. Call the .NET setter explicitly.
+            # that treats the whole value as one key. The .NET setter must be called explicitly.
             $builder.set_ConnectionString($Value)
         } catch {
             throw "The connection string could not be parsed: $($_.Exception.Message)"

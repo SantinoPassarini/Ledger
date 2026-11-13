@@ -4,10 +4,11 @@
 #
 # The connection string must be accepted by libpq (a postgresql:// URI or a
 # keyword string such as "host=... dbname=... user=... sslmode=require").
-# Keep it in an environment variable or a protected file; never commit it.
+# It is read from an environment variable or a protected file and must not be
+# committed.
 #
 # The script is independent from the Ledger API and does not expose any
-# endpoint. Off-server copying and scheduling are intentionally left to you.
+# endpoint. Off-server copying and scheduling are outside the script's scope.
 
 set -Eeuo pipefail
 

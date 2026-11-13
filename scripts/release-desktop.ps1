@@ -6,8 +6,9 @@ Builds the distributable Ledger.Desktop package for Windows x64.
 .DESCRIPTION
 Publishes a self-contained, single-file WinForms executable, writes the API base URL
 into an external appsettings.json, adds the end-user README, creates a ZIP and writes
-SHA256 checksums. The client does not need to be recompiled to change the API URL:
-edit appsettings.json next to the executable or set LEDGER_API_BASE_URL.
+SHA256 checksums. Changing the API URL does not require recompiling the client:
+use appsettings.json next to the executable or the LEDGER_API_BASE_URL environment
+variable.
 
 .EXAMPLE
 .\scripts\release-desktop.ps1 -Version 1.0.0 -ApiBaseUrl https://ledger-api.onrender.com/

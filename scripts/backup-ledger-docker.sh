@@ -5,8 +5,9 @@
 # client tools.
 #
 # Accepts a libpq URI (postgresql://...) or an Npgsql-style connection string
-# (Host=...;Database=...;Username=...;Password=...;SSL Mode=Require). Keep the
-# connection string in an environment variable; never commit it.
+# (Host=...;Database=...;Username=...;Password=...;SSL Mode=Require). The
+# connection string is read from an environment variable and must not be
+# committed.
 
 set -Eeuo pipefail
 

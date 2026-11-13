@@ -3,14 +3,14 @@ services:
     name: ledger-api
     runtime: docker
     plan: free
-    # Region: use the same one as your Neon project. Valid values:
+    # Region must match the Neon project region. Valid values:
     # oregon, ohio, virginia, frankfurt, singapore.
-    # If omitted, Render uses oregon. Do not change it after creation.
+    # Defaults to oregon when omitted. The region cannot be changed after creation.
     # region: oregon
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
-    # Deploy manually from the Render Dashboard after reviewing each change.
+    # Deployments are manual from the Render Dashboard after review.
     autoDeployTrigger: 'off'
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
@@ -21,16 +21,16 @@ services:
         value: Ledger.Desktop
       - key: Jwt__AccessTokenMinutes
         value: "480"
-      # Temporary during onboarding. Set to "false" after the known users register.
+      # Temporary during onboarding; disable after the known users register.
       - key: Ledger__Registration__Enabled
         value: "true"
       # Secrets: Render prompts for these values when the Blueprint is created.
-      # Never commit real values to this file.
+      # Real values must not be committed to this file.
       - key: ConnectionStrings__Ledger
         sync: false
       - key: Jwt__SigningKey
         sync: false
       - key: Ledger__Registration__InviteCode
         sync: false
-      # Do not configure Ledger__Owner or Ledger__Users in production. The accounts
-      # already exist in Neon and production provisioning must not modify them.
+      # Ledger__Owner and Ledger__Users must not be configured in production.
+      # The accounts already exist in Neon and production provisioning must not modify them.

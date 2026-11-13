@@ -38,14 +38,14 @@ public sealed class ProvisionedUserOptions
 public sealed class RegistrationOptions
 {
     /// <summary>
-    /// Self-registration is disabled by default. Enable it only for a private instance
-    /// that is reachable by the people who should be allowed to create an account.
+    /// Self-registration is disabled by default and is intended only for a private
+    /// instance reachable by users authorized to create an account.
     /// </summary>
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// Shared invite code required by the registration endpoint. Store it in user secrets
-    /// or an environment variable; never commit it.
+    /// Shared invite code required by the registration endpoint. It is read from user
+    /// secrets or an environment variable and must not be committed.
     /// </summary>
     public string InviteCode { get; set; } = string.Empty;
 }

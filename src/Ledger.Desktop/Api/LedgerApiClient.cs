@@ -30,7 +30,7 @@ public sealed class LedgerApiClient : IDisposable
         {
             BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/"),
             // Render Free spins down after idle and needs up to about a minute to wake.
-            // Keep the client alive long enough for that first request to complete.
+            // The timeout allows enough time for that first request to complete.
             Timeout = TimeSpan.FromSeconds(100)
         };
     }
