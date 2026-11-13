@@ -25,28 +25,6 @@ INSTALACION
   3. Si Windows SmartScreen muestra una advertencia, elegi "Mas informacion" y
      despues "Ejecutar de todas formas". El ejecutable no esta firmado digitalmente.
 
-CONFIGURAR LA DIRECCION DE LA API
----------------------------------
-  El paquete ya viene configurado con:
-
-    {{API_BASE_URL}}
-
-  Si necesitas cambiar esa direccion, edita appsettings.json con el Bloc de notas:
-
-    {
-      "ApiBaseUrl": "https://tu-api.ejemplo.com/"
-    }
-
-  La direccion debe incluir http:// o https:// y terminar en /.
-
-  Tambien podes usar la variable de entorno LEDGER_API_BASE_URL, que tiene prioridad
-  sobre appsettings.json:
-
-    set LEDGER_API_BASE_URL=https://tu-api.ejemplo.com/
-    Ledger.Desktop.exe
-
-  No es necesario recompilar el cliente para cambiar la direccion.
-
 PRIMER INGRESO
 --------------
   1. Abri Ledger.Desktop.exe.
@@ -89,17 +67,3 @@ PROBLEMAS FRECUENTES
   La aplicacion se cierra al abrirla
     - Extrae el ZIP en una carpeta con permisos de escritura.
     - Verifica que appsettings.json sea un JSON valido.
-
-SEGURIDAD
----------
-  - Usa siempre https:// en la direccion de la API cuando no estes en tu equipo.
-  - No publiques capturas con datos financieros.
-  - Cerra la sesion cuando uses una computadora compartida.
-
-SOPORTE
--------
-  Contacta al responsable del servicio e incluye:
-    - version de Ledger ({{VERSION}}),
-    - direccion de la API configurada,
-    - texto exacto del error.
-  Nunca envies tu contrasena ni el codigo de invitacion.
