@@ -4,6 +4,34 @@ A personal finance management application built with C# and .NET 8.
 
 Ledger allows users to manage their accounts, track income and expenses, organize spending categories, set monthly budgets, and monitor their financial activity through a dashboard.
 
+## Try the demo
+
+Download the Windows client from the [latest release](../../releases/latest) and create your own account. The executable is self-contained: no .NET installation or manual configuration is required.
+
+**Demo invite code:** `6E847C6C91A746E5CF5CEE7B22B7A08BB77C4FA208EC3E48`
+
+1. Download `Ledger.Desktop-1.0.0-win-x64.zip` from the release page.
+2. Extract it into a local folder.
+3. Run `Ledger.Desktop.exe`.
+4. Select **Create account**.
+5. Choose a username and a password of at least 12 characters, and enter the invite code above.
+
+Every visitor gets a private, empty account with the default categories already created. You can add your own sample accounts, transactions and budgets without affecting anyone else.
+
+> The first launch can take about a minute while the API wakes up. Windows SmartScreen may show a warning because the executable was downloaded from the internet. There is no password recovery, so keep your credentials. The invite code may be rotated or disabled later; accounts that already exist are not affected.
+
+### Screenshots
+
+![Dashboard](docs/images/ledger-ui-dashboard.png)
+
+![Accounts](docs/images/ledger-ui-accounts.png)
+
+![Categories](docs/images/ledger-ui-categories.png)
+
+![Budgets](docs/images/ledger-ui-budgets.png)
+
+![Transactions](docs/images/ledger-ui-transactions.png)
+
 ## Features
 
 - **Dashboard:** Monthly financial overview, account balances, income, expenses, spending breakdown and historical trends.
